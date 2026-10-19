@@ -54,7 +54,7 @@ fn tables(data: &[Line], labels: &asm::Program) -> Vec<Table> {
 /// The label's name, when the line is a label marked `; carried` (`main_t:   ; carried: a table on the tape`).
 fn carried_label(line: &Line) -> Option<&str> {
     let Kind::Label(name) = &line.kind else { return None };
-    let rest = line.comment.as_ref()?.text.strip_prefix(" carried")?;
+    let rest = line.comment.as_deref()?.strip_prefix("carried")?;
     // the word itself, not one that starts with it
     let whole = !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_');
     whole.then_some(name.as_str())
