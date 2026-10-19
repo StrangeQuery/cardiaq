@@ -30,8 +30,8 @@ pub struct Tape {
     pub tables: Vec<Table>,
 }
 
-/// The tables a piece of assembly carries: a label the compiler marks `; carried`, then the array it labels, its
-/// cells the DAT lines that follow until the next label.
+/// The tables a piece of assembly carries: a table label, then the array it labels, its cells the DAT lines that
+/// follow until the next label.
 fn tables(data: &[Line], labels: &asm::Program) -> Vec<Table> {
     let mut found = vec![];
     for (i, line) in data.iter().enumerate() {
@@ -51,13 +51,12 @@ fn tables(data: &[Line], labels: &asm::Program) -> Vec<Table> {
     found
 }
 
-/// The label's name, when the line is a label marked `; carried` (`main_t:   ; carried: a table on the tape`).
+/// The label's name, when the line is a carried table's label.
 fn carried_label(line: &Line) -> Option<&str> {
-    let Kind::Label(name) = &line.kind else { return None };
-    let rest = line.comment.as_deref()?.strip_prefix("carried")?;
-    // the word itself, not one that starts with it
-    let whole = !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_');
-    whole.then_some(name.as_str())
+    match &line.kind {
+        Kind::Table(name) => Some(name),
+        _ => None,
+    }
 }
 
 /// Whether a word of a `.tape` comment is a number.
