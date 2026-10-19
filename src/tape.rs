@@ -13,8 +13,8 @@
 //!   `# carried ADDRESS LENGTH`     a `carried()` table: those cells of the first phase's tape are filled from
 //!                                  the start of the input when the tape is run (`Tape::deck`)
 use crate::asm;
+use crate::compile::machine::{Kind, Line};
 use crate::compile::Phases;
-use crate::compile::regex::re;
 
 /// A table that comes on the tape: `len` cells from address `at`.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,18 +26,33 @@ pub struct Tape { pub phases: Vec<Vec<i32>>, pub tables: Vec<Table> }
 
 /// The tables a piece of assembly carries: a label the compiler marks `; carried`, then the array it labels, its
 /// cells the DAT lines that follow until the next label.
-fn tables(text: &str, labels: &asm::Program) -> Vec<Table> {
-    let lines: Vec<&str> = text.lines().collect();
+fn tables(data: &[Line], labels: &asm::Program) -> Vec<Table> {
     let mut found = vec![];
-    for (i, l) in lines.iter().enumerate() {
-        let Some(m) = re(r"^(\w+):\s*; carried\b").exec(l) else { continue };
-        let first = lines.get(i + 1).is_some_and(|n| re(r"^\w+:\s+DAT\b").test(n));
-        let rest = lines[(i + 2).min(lines.len())..].iter().take_while(|n| re(r"^\s+DAT\b").test(n)).count();
+    for (i, line) in data.iter().enumerate() {
+        let Some(name) = carried_label(line) else { continue };
+        let first = data.get(i + 1).is_some_and(|l| matches!(l.kind, Kind::Dat(Some(_), _)));
+        let rest = data.iter().skip(i + 2).take_while(|l| matches!(l.kind, Kind::Dat(None, _))).count();
         let len = if first { 1 + rest } else { 0 };
-        if let Some(&at) = labels.labels.get(&m[1]) { found.push(Table { at, len }); }
+        if let Some(&at) = labels.labels.get(name) {
+            found.push(Table { at, len });
+        }
     }
     found.sort_by_key(|t| t.at);
     found
+}
+
+/// The label's name, when the line is a label marked `; carried` (`main_t:   ; carried: a table on the tape`).
+fn carried_label(line: &Line) -> Option<&str> {
+    let Kind::Label(name) = &line.kind else { return None };
+    let rest = line.comment.as_ref()?.text.strip_prefix(" carried")?;
+    // the word itself, not one that starts with it
+    let whole = !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_');
+    whole.then_some(name.as_str())
+}
+
+/// Whether a word of a `.tape` comment is a number.
+fn number(word: &str) -> bool {
+    !word.is_empty() && word.bytes().all(|c| c.is_ascii_digit())
 }
 
 impl Tape {
@@ -53,7 +68,7 @@ impl Tape {
             let c = r.code_text(i);
             let text = if r.code.len() == 1 { format!("{c}{data}") } else { format!("{data}\n{c}") };
             let p = asm::assemble(3, &text)?;
-            if i == 0 { tabs = tables(&data, &p); }
+            if i == 0 { tabs = tables(&r.data, &p); }
             let table = |a: i32| tabs.iter().any(|t| a >= t.at && a < t.at + t.len as i32);
             let cells: Vec<(i32, i32)> = p.cells.iter().copied()
                 .filter(|&(a, v)| if i == 0 { v != 0 || table(a) } else { r.code.len() == 1 || a >= data_end }).collect();
@@ -86,9 +101,14 @@ impl Tape {
             let l = line.trim();
             if l.is_empty() { continue; }
             if let Some(c) = l.strip_prefix('#') {
-                if re(r"^\s*phase\s+\d+\s*$").test(c) { phases.push(vec![]); continue; }
-                if let Some(m) = re(r"^\s*carried\s+(\d+)\s+(\d+)\s*$").exec(c) {
-                    tables.push(Table { at: m[1].parse().unwrap(), len: m[2].parse().unwrap() });
+                let words: Vec<&str> = c.split_whitespace().collect();
+                match words.as_slice() {
+                    ["phase", n] if number(n) => phases.push(vec![]),
+                    ["carried", at, len] if number(at) && number(len) => {
+                        tables.push(Table { at: at.parse().unwrap(), len: len.parse().unwrap() });
+                    }
+                    // any other comment
+                    _ => {}
                 }
                 continue;
             }
