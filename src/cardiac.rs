@@ -9,9 +9,16 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stop { Halt, OutOfCards, Limit }
 
-/// The ten instructions, by their first digit.
-const INP: i32 = 0; const CLA: i32 = 1; const ADD: i32 = 2; const TAC: i32 = 3; const SFT: i32 = 4;
-const OUT: i32 = 5; const STO: i32 = 6; const SUB: i32 = 7; const JMP: i32 = 8; const HRS: i32 = 9;
+/// The ten instructions, in the order of their first digit.
+#[derive(Clone, Copy)]
+enum Op { Inp, Cla, Add, Tac, Sft, Out, Sto, Sub, Jmp, Hrs }
+
+/// A match, not a lookup table: `decode` runs on every write to a cell, and a table there makes the whole emulator
+/// about a third slower.
+#[inline(always)]
+fn op(d: i32) -> Op {
+    match d { 0 => Op::Inp, 1 => Op::Cla, 2 => Op::Add, 3 => Op::Tac, 4 => Op::Sft, 5 => Op::Out, 6 => Op::Sto, 7 => Op::Sub, 8 => Op::Jmp, _ => Op::Hrs }
+}
 
 /// The accumulator holds four digits and a sign; anything beyond is lost off the top.
 #[inline(always)]
@@ -41,9 +48,9 @@ pub fn run_phases<'a>(first: &'a [i32], input: &'a [i32], later: &'a [Vec<i32>],
 #[inline(always)]
 fn run_feeding<'a>(parts: &[&'a [i32]], out: &mut Vec<i32>, limit: u64, mut next: impl FnMut(usize) -> Option<&'a [i32]>) -> (Stop, u64) {
     let mut m = [0i32; 100];
-    let mut dec = [(0u8, 0u8); 100];
+    let mut dec = [(Op::Inp, 0u8); 100];
     #[inline(always)]
-    fn decode(w: i32) -> (u8, u8) { let w = w.abs(); (((w / 100) % 10) as u8, (w % 100) as u8) }
+    fn decode(w: i32) -> (Op, u8) { let w = w.abs(); (op((w / 100) % 10), (w % 100) as u8) }
     m[0] = 1; dec[0] = decode(1);
     let (mut acc, mut pc, mut steps) = (0i32, 0usize, 0u64);
     let (mut part, mut card) = (0usize, 0usize);
@@ -56,8 +63,8 @@ fn run_feeding<'a>(parts: &[&'a [i32]], out: &mut Vec<i32>, limit: u64, mut next
         let (op, a) = dec[pc];
         let a = a as usize;
         pc += 1; if pc == 100 { pc = 0; }
-        match op as i32 {
-            INP => {
+        match op {
+            Op::Inp => {
                 while card >= cur.len() {
                     if let Some((c, k)) = held.take() { cur = c; card = k; continue; }
                     part += 1; card = 0;
@@ -67,19 +74,19 @@ fn run_feeding<'a>(parts: &[&'a [i32]], out: &mut Vec<i32>, limit: u64, mut next
                 if a != 0 { m[a] = cur[card]; dec[a] = decode(m[a]); }
                 card += 1;
             }
-            CLA => acc = m[a],
-            ADD => acc = wrap4(acc + m[a]),
-            TAC => if acc < 0 { pc = a },
-            SFT => {
+            Op::Cla => acc = m[a],
+            Op::Add => acc = wrap4(acc + m[a]),
+            Op::Tac => if acc < 0 { pc = a },
+            Op::Sft => {
                 // shift left by the tens digit, then right by the units digit, keeping four digits
                 let (l, r) = (a / 10, a % 10);
                 let x = ((acc.abs() as i64 * POW10[l] as i64) % 10000) as i32 / POW10[r];
                 acc = if acc < 0 { -x } else { x };
             }
-            OUT => out.push(m[a]),
-            STO => if a != 0 { m[a] = wrap3(acc); dec[a] = decode(m[a]); },
-            SUB => acc = wrap4(acc - m[a]),
-            JMP => {
+            Op::Out => out.push(m[a]),
+            Op::Sto => if a != 0 { m[a] = wrap3(acc); dec[a] = decode(m[a]); },
+            Op::Sub => acc = wrap4(acc - m[a]),
+            Op::Jmp => {
                 if a == 0 && pc != 3 {
                     // (the last phase fed has been read to its end: the reader is back in the deck)
                     if card >= cur.len() { if let Some((c, k)) = held.take() { cur = c; card = k; } }
@@ -87,8 +94,7 @@ fn run_feeding<'a>(parts: &[&'a [i32]], out: &mut Vec<i32>, limit: u64, mut next
                 }
                 m[99] = 800 + pc as i32; dec[99] = decode(m[99]); pc = a;
             }
-            HRS => return (Stop::Halt, steps),
-            _ => unreachable!(),
+            Op::Hrs => return (Stop::Halt, steps),
         }
     }
     (Stop::Limit, steps)
