@@ -91,8 +91,8 @@ const POW10: [i32; 10] = [
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
 pub fn run(parts: &[&[i32]], out: &mut Vec<i32>, limit: u64) -> (Stop, u64) {
-    let e = run_feeding::<false>(parts, out, limit, |_| None);
-    (e.stop, e.steps)
+    let ended = run_feeding::<false>(parts, out, limit, |_| None);
+    (ended.stop, ended.steps)
 }
 
 /// `run`, for a program in phases whose input is one stream: `next(k)` gives phase k + 2's tape (k = 0, 1, ...)
@@ -106,8 +106,8 @@ pub fn run_phases<'a>(
     out: &mut Vec<i32>,
     limit: u64,
 ) -> (Stop, u64) {
-    let e = run_feeding::<false>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()));
-    (e.stop, e.steps)
+    let ended = run_feeding::<false>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()));
+    (ended.stop, ended.steps)
 }
 
 /// `run_phases`, keeping track of the last instructions run, for a host that reports where a run ended (a panic,
