@@ -9,6 +9,8 @@ pub struct Program {
     pub cells: Vec<(i32, i32)>,
     pub labels: HashMap<String, i32>,
     pub end: i32,
+    /// for each line of the source, the cell it fills, if it fills one
+    pub lines: Vec<Option<i32>>,
 }
 
 fn op(mn: &str) -> Option<i32> {
@@ -46,8 +48,10 @@ pub fn assemble(origin: i32, src: &str) -> Result<Program, String> {
     let mut labels = HashMap::new();
     let mut items: Vec<(i32, String)> = vec![];
     let mut at = origin;
+    let mut lines = vec![];
     for raw in src.split('\n') {
         let line = raw.split(';').next().unwrap().trim();
+        lines.push(None);
         if line.is_empty() {
             continue;
         }
@@ -61,6 +65,7 @@ pub fn assemble(origin: i32, src: &str) -> Result<Program, String> {
         }
         if !body.is_empty() {
             items.push((at, body.to_string()));
+            *lines.last_mut().unwrap() = Some(at);
             at += 1;
         }
     }
@@ -95,7 +100,12 @@ pub fn assemble(origin: i32, src: &str) -> Result<Program, String> {
     if at > 99 {
         return Err("program runs past cell 98".into());
     }
-    Ok(Program { cells, labels, end: at })
+    Ok(Program {
+        cells,
+        labels,
+        end: at,
+        lines,
+    })
 }
 
 impl Program {

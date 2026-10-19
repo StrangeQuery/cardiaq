@@ -286,6 +286,15 @@ impl Tape {
         Ok(deck)
     }
 
+    /// Run the tape on `input`, keeping track of where it ended (`cardiac::run_traced`): the cards punched, and how
+    /// the run ended, for a panic map to say why it panicked (`panics::Map::panic`).
+    pub fn run_traced(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Ended), String> {
+        let deck = self.deck(input)?;
+        let mut punched = vec![];
+        let end = crate::cardiac::run_traced(&deck, &[], &self.phases[1..], &mut punched, limit);
+        Ok((punched, end))
+    }
+
     /// Run the tape on `input` and return the cards punched, why it stopped, and how many instructions it ran
     /// (the loader's among them).
     pub fn run(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Stop, u64), String> {

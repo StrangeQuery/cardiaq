@@ -13,6 +13,19 @@ pub enum Stop {
     Limit,
 }
 
+/// How a traced run ended (`run_traced`): what a host needs to say why it stopped, such as where a panic was.
+#[derive(Debug, Clone)]
+pub struct Ended {
+    pub stop: Stop,
+    pub steps: u64,
+    /// the cells of the last three instructions run, the last (the HRS, when it halted) last: so the one that led
+    /// into a routine of two instructions, by a branch or by running on into it
+    pub trail: [usize; 3],
+    /// the phase that was running: 1, or the number of the last one loaded
+    pub phase: usize,
+    pub memory: [i32; 100],
+}
+
 /// The ten instructions, in the order of their first digit.
 #[derive(Clone, Copy)]
 enum Op {
@@ -78,7 +91,8 @@ const POW10: [i32; 10] = [
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
 pub fn run(parts: &[&[i32]], out: &mut Vec<i32>, limit: u64) -> (Stop, u64) {
-    run_feeding(parts, out, limit, |_| None)
+    let e = run_feeding::<false>(parts, out, limit, |_| None);
+    (e.stop, e.steps)
 }
 
 /// `run`, for a program in phases whose input is one stream: `next(k)` gives phase k + 2's tape (k = 0, 1, ...)
@@ -92,16 +106,30 @@ pub fn run_phases<'a>(
     out: &mut Vec<i32>,
     limit: u64,
 ) -> (Stop, u64) {
-    run_feeding(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()))
+    let e = run_feeding::<false>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()));
+    (e.stop, e.steps)
 }
 
+/// `run_phases`, keeping track of the last instructions run, for a host that reports where a run ended (a panic,
+/// say).
+pub fn run_traced<'a>(
+    first: &'a [i32],
+    input: &'a [i32],
+    later: &'a [Vec<i32>],
+    out: &mut Vec<i32>,
+    limit: u64,
+) -> Ended {
+    run_feeding::<true>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()))
+}
+
+/// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more.
 #[inline(always)]
-fn run_feeding<'a>(
+fn run_feeding<'a, const TRACE: bool>(
     parts: &[&'a [i32]],
     out: &mut Vec<i32>,
     limit: u64,
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
-) -> (Stop, u64) {
+) -> Ended {
     let mut m = [0i32; 100];
     let mut dec = [(Op::Inp, 0u8); 100];
     #[inline(always)]
@@ -117,8 +145,19 @@ fn run_feeding<'a>(
     // a phase's tape fed in ahead of the rest: where the reader was in the deck, and how many phases were fed
     let mut held: Option<(&[i32], usize)> = None;
     let mut fed = 0;
+    let mut trail = [0usize; 3];
+    let ended = |stop, steps, trail, fed, m| Ended {
+        stop,
+        steps,
+        trail,
+        phase: fed + 1,
+        memory: m,
+    };
     while steps < limit {
         steps += 1;
+        if TRACE {
+            trail = [trail[1], trail[2], pc];
+        }
         let (op, a) = dec[pc];
         let a = a as usize;
         pc += 1;
@@ -136,7 +175,7 @@ fn run_feeding<'a>(
                     part += 1;
                     card = 0;
                     if part >= parts.len() {
-                        return (Stop::OutOfCards, steps);
+                        return ended(Stop::OutOfCards, steps, trail, fed, m);
                     }
                     cur = parts[part];
                 }
@@ -189,8 +228,8 @@ fn run_feeding<'a>(
                 dec[99] = decode(m[99]);
                 pc = a;
             }
-            Op::Hrs => return (Stop::Halt, steps),
+            Op::Hrs => return ended(Stop::Halt, steps, trail, fed, m),
         }
     }
-    (Stop::Limit, steps)
+    ended(Stop::Limit, steps, trail, fed, m)
 }
