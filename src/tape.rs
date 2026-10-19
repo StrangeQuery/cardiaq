@@ -47,11 +47,13 @@ impl Tape {
     pub fn of(r: &Phases) -> Result<Tape, String> {
         let mut phases = vec![];
         let mut tabs = vec![];
-        let data_end = asm::assemble(3, &r.data)?.end;
-        for (i, c) in r.code.iter().enumerate() {
-            let text = if r.code.len() == 1 { format!("{c}{}", r.data) } else { format!("{}\n{c}", r.data) };
+        let data = r.data_text();
+        let data_end = asm::assemble(3, &data)?.end;
+        for i in 0..r.code.len() {
+            let c = r.code_text(i);
+            let text = if r.code.len() == 1 { format!("{c}{data}") } else { format!("{data}\n{c}") };
             let p = asm::assemble(3, &text)?;
-            if i == 0 { tabs = tables(&r.data, &p); }
+            if i == 0 { tabs = tables(&data, &p); }
             let table = |a: i32| tabs.iter().any(|t| a >= t.at && a < t.at + t.len as i32);
             let cells: Vec<(i32, i32)> = p.cells.iter().copied()
                 .filter(|&(a, v)| if i == 0 { v != 0 || table(a) } else { r.code.len() == 1 || a >= data_end }).collect();
