@@ -3,7 +3,9 @@
 //! Cell 00 is wired to 001, which is `INP 01`: on a cleared machine started at 00 it reads the first card into
 //! cell 01 and runs on from there, so a deck that begins with the two-card loader (002, 800) boots itself. A program
 //! is started that way, on cleared memory, with its tape and then its input cards in the reader. What it punches
-//! (OUT) goes to a `Punch` card by card, as it is punched: collected in order, or printed at once.
+//! (OUT) goes to a `Punch` card by card, as it is punched: collected in order, or printed at once. Past the cards
+//! in the reader, a run can take more from a source of cards (`run_reading`), each asked for only when an INP
+//! runs, so a source can wait for it as an operator would: a person typing, or a machine upstream still running.
 
 /// Where the cards OUT punches go, one at a time as the program punches them: a `Vec` collects them; a host can
 /// print each as it comes, or pass it on to another machine.
@@ -103,7 +105,7 @@ const POW10: [i32; 10] = [
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
 pub fn run(parts: &[&[i32]], out: &mut impl Punch, limit: u64) -> (Stop, u64) {
-    let ended = run_feeding::<false>(parts, out, limit, |_| None);
+    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, |_| None);
     (ended.stop, ended.steps)
 }
 
@@ -118,7 +120,9 @@ pub fn run_phases<'a>(
     out: &mut impl Punch,
     limit: u64,
 ) -> (Stop, u64) {
-    let ended = run_feeding::<false>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()));
+    let ended = run_feeding::<false>(&[first, input], &mut std::iter::empty(), out, limit, |k| {
+        later.get(k).map(|t| t.as_slice())
+    });
     (ended.stop, ended.steps)
 }
 
@@ -131,13 +135,31 @@ pub fn run_traced<'a>(
     out: &mut impl Punch,
     limit: u64,
 ) -> Ended {
-    run_feeding::<true>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()))
+    run_reading::<true>(first, input, later, &mut std::iter::empty(), out, limit)
 }
 
-/// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more.
+/// `run_phases` (`run_traced` with TRACE), and when the reader has read `first` and `input` to the end, each
+/// further card INP reads is the next of `more`, asked for when that INP runs and never before; the reader is
+/// empty when `more` ends.
+pub fn run_reading<'a, const TRACE: bool>(
+    first: &'a [i32],
+    input: &'a [i32],
+    later: &'a [Vec<i32>],
+    more: &mut impl Iterator<Item = i32>,
+    out: &mut impl Punch,
+    limit: u64,
+) -> Ended {
+    run_feeding::<TRACE>(&[first, input], more, out, limit, |k| {
+        later.get(k).map(|t| t.as_slice())
+    })
+}
+
+/// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more. Once `parts`
+/// are read, INP takes its cards from `more`.
 #[inline(always)]
 fn run_feeding<'a, const TRACE: bool>(
     parts: &[&'a [i32]],
+    more: &mut impl Iterator<Item = i32>,
     out: &mut impl Punch,
     limit: u64,
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
@@ -178,24 +200,32 @@ fn run_feeding<'a, const TRACE: bool>(
         }
         match op {
             Op::Inp => {
-                while card >= cur.len() {
+                let next_card = loop {
+                    if card < cur.len() {
+                        card += 1;
+                        break Some(cur[card - 1]);
+                    }
                     if let Some((c, k)) = held.take() {
                         cur = c;
                         card = k;
                         continue;
                     }
-                    part += 1;
-                    card = 0;
-                    if part >= parts.len() {
-                        return ended(Stop::OutOfCards, steps, trail, fed, m);
+                    if part + 1 < parts.len() {
+                        part += 1;
+                        cur = parts[part];
+                        card = 0;
+                        continue;
                     }
-                    cur = parts[part];
-                }
+                    // the deck is read: the next card is asked for now, as this INP runs
+                    break more.next();
+                };
+                let Some(c) = next_card else {
+                    return ended(Stop::OutOfCards, steps, trail, fed, m);
+                };
                 if a != 0 {
-                    m[a] = cur[card];
+                    m[a] = c;
                     dec[a] = decode(m[a]);
                 }
-                card += 1;
             }
             Op::Cla => acc = m[a],
             Op::Add => acc = wrap4(acc + m[a]),

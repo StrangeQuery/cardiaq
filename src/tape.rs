@@ -291,28 +291,50 @@ impl Tape {
     /// the run ended, for a panic map to say why it panicked (`panics::Map::panic`).
     pub fn run_traced(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Ended), String> {
         let mut punched = vec![];
-        let end = self.run_traced_into(input, limit, &mut punched)?;
+        let end = self.run_traced_into(input, &mut std::iter::empty(), limit, &mut punched)?;
         Ok((punched, end))
     }
 
-    /// `run_traced`, each card punched going to `out` as it is punched.
-    pub fn run_traced_into(&self, input: &[i32], limit: u64, out: &mut impl Punch) -> Result<Ended, String> {
+    /// `run_traced`, each card punched going to `out` as it is punched, and once `input` is read, each further
+    /// card the next of `more`, asked for when the INP that reads it runs.
+    pub fn run_traced_into(
+        &self,
+        input: &[i32],
+        more: &mut impl Iterator<Item = i32>,
+        limit: u64,
+        out: &mut impl Punch,
+    ) -> Result<Ended, String> {
         let deck = self.deck(input)?;
-        Ok(crate::cardiac::run_traced(&deck, &[], &self.phases[1..], out, limit))
+        Ok(crate::cardiac::run_reading::<true>(
+            &deck,
+            &[],
+            &self.phases[1..],
+            more,
+            out,
+            limit,
+        ))
     }
 
     /// Run the tape on `input` and return the cards punched, why it stopped, and how many instructions it ran
     /// (the loader's among them).
     pub fn run(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Stop, u64), String> {
         let mut punched = vec![];
-        let (why, steps) = self.run_into(input, limit, &mut punched)?;
+        let (why, steps) = self.run_into(input, &mut std::iter::empty(), limit, &mut punched)?;
         Ok((punched, why, steps))
     }
 
-    /// `run`, each card punched going to `out` as it is punched.
-    pub fn run_into(&self, input: &[i32], limit: u64, out: &mut impl Punch) -> Result<(Stop, u64), String> {
+    /// `run`, each card punched going to `out` as it is punched, and once `input` is read, each further card the
+    /// next of `more`, asked for when the INP that reads it runs.
+    pub fn run_into(
+        &self,
+        input: &[i32],
+        more: &mut impl Iterator<Item = i32>,
+        limit: u64,
+        out: &mut impl Punch,
+    ) -> Result<(Stop, u64), String> {
         let deck = self.deck(input)?;
-        Ok(crate::cardiac::run_phases(&deck, &[], &self.phases[1..], out, limit))
+        let end = crate::cardiac::run_reading::<false>(&deck, &[], &self.phases[1..], more, out, limit);
+        Ok((end.stop, end.steps))
     }
 }
 
@@ -359,6 +381,34 @@ mod tests {
         assert!(text.contains("\n# resource map 20 3 bound\n"));
         assert_eq!(Tape::parse(&text).unwrap(), t);
         assert!(Tape::parse("002\n1000\n").is_err());
+    }
+
+    /// Past the input in the reader, each card comes from `more` when an INP asks for it, never ahead: by then the
+    /// program has punched everything before it (so it can be the answer to what it punched), and its end is the
+    /// reader's.
+    #[test]
+    fn more_cards_are_asked_for_when_inp_runs() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Shared(Rc<RefCell<Vec<i32>>>);
+        impl Punch for Shared {
+            fn punch(&mut self, card: i32) {
+                self.0.borrow_mut().push(card)
+            }
+        }
+        let punched = Rc::new(RefCell::new(vec![]));
+        let seen = punched.clone();
+        let mut asked: Vec<Vec<i32>> = vec![];
+        // each card is the last card punched, plus 10
+        let mut more = std::iter::from_fn(|| {
+            asked.push(seen.borrow().clone());
+            (asked.len() <= 2).then(|| seen.borrow().last().unwrap() + 10)
+        });
+        let t = tape_of(PRINTS, vec![]);
+        let (why, _) = t.run_into(&[5], &mut more, 1000, &mut Shared(punched.clone())).unwrap();
+        assert_eq!(why, Stop::OutOfCards);
+        assert_eq!(*punched.borrow(), vec![0, 0, 5, 15, 25]);
+        assert_eq!(asked, vec![vec![0, 0, 5], vec![0, 0, 5, 15], vec![0, 0, 5, 15, 25]]);
     }
 
     #[test]
