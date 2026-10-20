@@ -19,7 +19,7 @@
 use std::path::Path;
 
 use crate::asm;
-use crate::cardiac::{Ended, Punch, Stop};
+use crate::cardiac::{Console, Ended, Stop};
 use crate::compile::machine::{Kind, Line};
 use crate::compile::Phases;
 
@@ -302,7 +302,7 @@ impl Tape {
         input: &[i32],
         more: &mut impl Iterator<Item = i32>,
         limit: u64,
-        out: &mut impl Punch,
+        out: &mut impl Console,
     ) -> Result<Ended, String> {
         let deck = self.deck(input)?;
         Ok(crate::cardiac::run_reading::<true>(
@@ -330,7 +330,7 @@ impl Tape {
         input: &[i32],
         more: &mut impl Iterator<Item = i32>,
         limit: u64,
-        out: &mut impl Punch,
+        out: &mut impl Console,
     ) -> Result<(Stop, u64), String> {
         let deck = self.deck(input)?;
         let end = crate::cardiac::run_reading::<false>(&deck, &[], &self.phases[1..], more, out, limit);
@@ -391,7 +391,7 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
         struct Shared(Rc<RefCell<Vec<i32>>>);
-        impl Punch for Shared {
+        impl Console for Shared {
             fn punch(&mut self, card: i32) {
                 self.0.borrow_mut().push(card)
             }

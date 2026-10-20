@@ -3,20 +3,44 @@
 //! Cell 00 is wired to 001, which is `INP 01`: on a cleared machine started at 00 it reads the first card into
 //! cell 01 and runs on from there, so a deck that begins with the two-card loader (002, 800) boots itself. A program
 //! is started that way, on cleared memory, with its tape and then its input cards in the reader. What it punches
-//! (OUT) goes to a `Punch` card by card, as it is punched: collected in order, or printed at once. Past the cards
+//! (OUT) goes to a `Console` card by card, as it is punched: collected in order, or printed at once. Past the cards
 //! in the reader, a run can take more from a source of cards (`run_reading`), each asked for only when an INP
 //! runs, so a source can wait for it as an operator would: a person typing, or a machine upstream still running.
 
-/// Where the cards OUT punches go, one at a time as the program punches them: a `Vec` collects them; a host can
-/// print each as it comes, or pass it on to another machine.
-pub trait Punch {
+/// What the machine tells its host as it runs. Above all where the cards OUT punches go, one at a time as the
+/// program punches them: a `Vec` collects them; a host can print each as it comes, or pass it on to another
+/// machine. A host that follows the run (a log, `cargo cardiac run -v`) is also told of each card read and each
+/// phase loaded; those do nothing unless a host wants them, and then cost nothing in a run that doesn't.
+pub trait Console {
     fn punch(&mut self, card: i32);
+
+    /// `punch`, told where in the run (`punch` unless a host wants to know).
+    #[inline(always)]
+    fn punch_at(&mut self, card: i32, _at: At) {
+        self.punch(card)
+    }
+
+    /// INP read a card: the deck's (a tape's cards are read so too, by the loader) or one from the source past it.
+    #[inline(always)]
+    fn read(&mut self, _card: i32, _at: At) {}
+
+    /// The program ended a phase, and phase `phase` (2, 3, ...) has gone into the reader, ahead of the input.
+    #[inline(always)]
+    fn phase(&mut self, _phase: usize, _at: At) {}
 }
 
-impl Punch for Vec<i32> {
+impl Console for Vec<i32> {
     fn punch(&mut self, card: i32) {
         self.push(card)
     }
+}
+
+/// Where in a run something happened: how many instructions have run (this one among them), and the cell of the
+/// instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct At {
+    pub steps: u64,
+    pub cell: usize,
 }
 
 /// Why a run stopped.
@@ -38,6 +62,8 @@ pub struct Ended {
     /// the phase that was running: 1, or the number of the last one loaded
     pub phase: usize,
     pub memory: [i32; 100],
+    /// the accumulator when it stopped
+    pub acc: i32,
 }
 
 /// The ten instructions, in the order of their first digit.
@@ -104,7 +130,7 @@ const POW10: [i32; 10] = [
 ///
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
-pub fn run(parts: &[&[i32]], out: &mut impl Punch, limit: u64) -> (Stop, u64) {
+pub fn run(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) {
     let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, |_| None);
     (ended.stop, ended.steps)
 }
@@ -117,7 +143,7 @@ pub fn run_phases<'a>(
     first: &'a [i32],
     input: &'a [i32],
     later: &'a [Vec<i32>],
-    out: &mut impl Punch,
+    out: &mut impl Console,
     limit: u64,
 ) -> (Stop, u64) {
     let ended = run_feeding::<false>(&[first, input], &mut std::iter::empty(), out, limit, |k| {
@@ -132,7 +158,7 @@ pub fn run_traced<'a>(
     first: &'a [i32],
     input: &'a [i32],
     later: &'a [Vec<i32>],
-    out: &mut impl Punch,
+    out: &mut impl Console,
     limit: u64,
 ) -> Ended {
     run_reading::<true>(first, input, later, &mut std::iter::empty(), out, limit)
@@ -146,7 +172,7 @@ pub fn run_reading<'a, const TRACE: bool>(
     input: &'a [i32],
     later: &'a [Vec<i32>],
     more: &mut impl Iterator<Item = i32>,
-    out: &mut impl Punch,
+    out: &mut impl Console,
     limit: u64,
 ) -> Ended {
     run_feeding::<TRACE>(&[first, input], more, out, limit, |k| {
@@ -160,7 +186,7 @@ pub fn run_reading<'a, const TRACE: bool>(
 fn run_feeding<'a, const TRACE: bool>(
     parts: &[&'a [i32]],
     more: &mut impl Iterator<Item = i32>,
-    out: &mut impl Punch,
+    out: &mut impl Console,
     limit: u64,
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
@@ -180,12 +206,13 @@ fn run_feeding<'a, const TRACE: bool>(
     let mut held: Option<(&[i32], usize)> = None;
     let mut fed = 0;
     let mut trail = [0usize; 3];
-    let ended = |stop, steps, trail, fed, m| Ended {
+    let ended = |stop, steps, trail, fed, m, acc| Ended {
         stop,
         steps,
         trail,
         phase: fed + 1,
         memory: m,
+        acc,
     };
     while steps < limit {
         steps += 1;
@@ -194,6 +221,7 @@ fn run_feeding<'a, const TRACE: bool>(
         }
         let (op, a) = dec[pc];
         let a = a as usize;
+        let here = pc;
         pc += 1;
         if pc == 100 {
             pc = 0;
@@ -220,8 +248,9 @@ fn run_feeding<'a, const TRACE: bool>(
                     break more.next();
                 };
                 let Some(c) = next_card else {
-                    return ended(Stop::OutOfCards, steps, trail, fed, m);
+                    return ended(Stop::OutOfCards, steps, trail, fed, m, acc);
                 };
+                out.read(c, At { steps, cell: here });
                 if a != 0 {
                     m[a] = c;
                     dec[a] = decode(m[a]);
@@ -240,7 +269,7 @@ fn run_feeding<'a, const TRACE: bool>(
                 let x = ((acc.abs() as i64 * POW10[l] as i64) % 10000) as i32 / POW10[r];
                 acc = if acc < 0 { -x } else { x };
             }
-            Op::Out => out.punch(m[a]),
+            Op::Out => out.punch_at(m[a], At { steps, cell: here }),
             Op::Sto => {
                 if a != 0 {
                     m[a] = wrap3(acc);
@@ -260,6 +289,7 @@ fn run_feeding<'a, const TRACE: bool>(
                     if held.is_none() {
                         if let Some(t) = next(fed) {
                             fed += 1;
+                            out.phase(fed + 1, At { steps, cell: here });
                             held = Some((cur, card));
                             cur = t;
                             card = 0;
@@ -270,8 +300,8 @@ fn run_feeding<'a, const TRACE: bool>(
                 dec[99] = decode(m[99]);
                 pc = a;
             }
-            Op::Hrs => return ended(Stop::Halt, steps, trail, fed, m),
+            Op::Hrs => return ended(Stop::Halt, steps, trail, fed, m, acc),
         }
     }
-    ended(Stop::Limit, steps, trail, fed, m)
+    ended(Stop::Limit, steps, trail, fed, m, acc)
 }
