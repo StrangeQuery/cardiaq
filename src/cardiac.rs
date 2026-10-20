@@ -3,7 +3,19 @@
 //! Cell 00 is wired to 001, which is `INP 01`: on a cleared machine started at 00 it reads the first card into
 //! cell 01 and runs on from there, so a deck that begins with the two-card loader (002, 800) boots itself. A program
 //! is started that way, on cleared memory, with its tape and then its input cards in the reader. What it punches
-//! (OUT) is collected in order.
+//! (OUT) goes to a `Punch` card by card, as it is punched: collected in order, or printed at once.
+
+/// Where the cards OUT punches go, one at a time as the program punches them: a `Vec` collects them; a host can
+/// print each as it comes, or pass it on to another machine.
+pub trait Punch {
+    fn punch(&mut self, card: i32);
+}
+
+impl Punch for Vec<i32> {
+    fn punch(&mut self, card: i32) {
+        self.push(card)
+    }
+}
 
 /// Why a run stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +102,7 @@ const POW10: [i32; 10] = [
 ///
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
-pub fn run(parts: &[&[i32]], out: &mut Vec<i32>, limit: u64) -> (Stop, u64) {
+pub fn run(parts: &[&[i32]], out: &mut impl Punch, limit: u64) -> (Stop, u64) {
     let ended = run_feeding::<false>(parts, out, limit, |_| None);
     (ended.stop, ended.steps)
 }
@@ -103,7 +115,7 @@ pub fn run_phases<'a>(
     first: &'a [i32],
     input: &'a [i32],
     later: &'a [Vec<i32>],
-    out: &mut Vec<i32>,
+    out: &mut impl Punch,
     limit: u64,
 ) -> (Stop, u64) {
     let ended = run_feeding::<false>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()));
@@ -116,7 +128,7 @@ pub fn run_traced<'a>(
     first: &'a [i32],
     input: &'a [i32],
     later: &'a [Vec<i32>],
-    out: &mut Vec<i32>,
+    out: &mut impl Punch,
     limit: u64,
 ) -> Ended {
     run_feeding::<true>(&[first, input], out, limit, |k| later.get(k).map(|t| t.as_slice()))
@@ -126,7 +138,7 @@ pub fn run_traced<'a>(
 #[inline(always)]
 fn run_feeding<'a, const TRACE: bool>(
     parts: &[&'a [i32]],
-    out: &mut Vec<i32>,
+    out: &mut impl Punch,
     limit: u64,
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
@@ -198,7 +210,7 @@ fn run_feeding<'a, const TRACE: bool>(
                 let x = ((acc.abs() as i64 * POW10[l] as i64) % 10000) as i32 / POW10[r];
                 acc = if acc < 0 { -x } else { x };
             }
-            Op::Out => out.push(m[a]),
+            Op::Out => out.punch(m[a]),
             Op::Sto => {
                 if a != 0 {
                     m[a] = wrap3(acc);

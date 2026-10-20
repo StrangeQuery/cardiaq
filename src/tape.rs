@@ -19,6 +19,7 @@
 use std::path::Path;
 
 use crate::asm;
+use crate::cardiac::{Ended, Punch, Stop};
 use crate::compile::machine::{Kind, Line};
 use crate::compile::Phases;
 
@@ -289,19 +290,29 @@ impl Tape {
     /// Run the tape on `input`, keeping track of where it ended (`cardiac::run_traced`): the cards punched, and how
     /// the run ended, for a panic map to say why it panicked (`panics::Map::panic`).
     pub fn run_traced(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Ended), String> {
-        let deck = self.deck(input)?;
         let mut punched = vec![];
-        let end = crate::cardiac::run_traced(&deck, &[], &self.phases[1..], &mut punched, limit);
+        let end = self.run_traced_into(input, limit, &mut punched)?;
         Ok((punched, end))
+    }
+
+    /// `run_traced`, each card punched going to `out` as it is punched.
+    pub fn run_traced_into(&self, input: &[i32], limit: u64, out: &mut impl Punch) -> Result<Ended, String> {
+        let deck = self.deck(input)?;
+        Ok(crate::cardiac::run_traced(&deck, &[], &self.phases[1..], out, limit))
     }
 
     /// Run the tape on `input` and return the cards punched, why it stopped, and how many instructions it ran
     /// (the loader's among them).
     pub fn run(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Stop, u64), String> {
-        let deck = self.deck(input)?;
         let mut punched = vec![];
-        let (why, steps) = crate::cardiac::run_phases(&deck, &[], &self.phases[1..], &mut punched, limit);
+        let (why, steps) = self.run_into(input, limit, &mut punched)?;
         Ok((punched, why, steps))
+    }
+
+    /// `run`, each card punched going to `out` as it is punched.
+    pub fn run_into(&self, input: &[i32], limit: u64, out: &mut impl Punch) -> Result<(Stop, u64), String> {
+        let deck = self.deck(input)?;
+        Ok(crate::cardiac::run_phases(&deck, &[], &self.phases[1..], out, limit))
     }
 }
 
