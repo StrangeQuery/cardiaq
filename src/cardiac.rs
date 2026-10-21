@@ -66,7 +66,7 @@ pub struct Ended {
     pub acc: i32,
 }
 
-/// The ten instructions, in the order of their first digit.
+/// The ten instructions, in the order of their first digit, and what a negative word is.
 #[derive(Clone, Copy)]
 enum Op {
     Inp,
@@ -79,6 +79,9 @@ enum Op {
     Sub,
     Jmp,
     Hrs,
+    /// A negative word reached as an instruction: skipped, as Brian Stuart's simulator does, which keeps the negative
+    /// words free for instructions to come (#106)
+    Skip,
 }
 
 /// A match, not a lookup table: `decode` runs on every write to a cell, and a table there makes the whole emulator
@@ -194,7 +197,9 @@ fn run_feeding<'a, const TRACE: bool>(
     let mut dec = [(Op::Inp, 0u8); 100];
     #[inline(always)]
     fn decode(w: i32) -> (Op, u8) {
-        let w = w.abs();
+        if w < 0 {
+            return (Op::Skip, 0);
+        }
         (op((w / 100) % 10), (w % 100) as u8)
     }
     m[0] = 1;
@@ -301,7 +306,24 @@ fn run_feeding<'a, const TRACE: bool>(
                 pc = a;
             }
             Op::Hrs => return ended(Stop::Halt, steps, trail, fed, m, acc),
+            Op::Skip => {}
         }
     }
     ended(Stop::Limit, steps, trail, fed, m, acc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_negative_word_is_skipped() {
+        // 03 CLA 07, 04 -501 (OUT 01, if run by its digits), 05 OUT 07, 06 HRS, 07 42; the loader's cards, then the
+        // JMP to 03 into its cell 02 (#106)
+        let deck = [2, 800, 3, 107, 4, -501, 5, 507, 6, 900, 7, 42, 2, 803];
+        let mut out = vec![];
+        let (stop, _) = run(&[&deck], &mut out, 1000);
+        assert_eq!(stop, Stop::Halt);
+        assert_eq!(out, vec![42]);
+    }
 }
