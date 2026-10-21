@@ -1,4 +1,4 @@
-//! Tapes: a compiled program as the cards CARDIAC loads it from, and the `.tape` file they are written to.
+//! Tapes: a program as the cards CARDIAC loads it from, and the `.tape` file they are written to.
 //!
 //! A tape starts with the two-card loader (002, 800), then an address card and a value card for each cell of the
 //! program, then a card that jumps to its start (see `asm::tape`). The program's input comes after it.
@@ -19,10 +19,7 @@
 //!                                       `bound` after it when the cards hold the resource's values
 use std::path::Path;
 
-use crate::asm;
 use crate::cardiac::{Console, Ended, Stop};
-use crate::compile::machine::{Kind, Line};
-use crate::compile::Phases;
 
 /// A resource's slot: `len` cells from address `at`, for the resource `name`, and whether its cards hold the
 /// resource's values yet.
@@ -39,34 +36,6 @@ pub struct Slot {
 pub struct Tape {
     pub phases: Vec<Vec<i32>>,
     pub slots: Vec<Slot>,
-}
-
-/// The slots a piece of assembly has: a resource's table label, then the array it labels, its cells the DAT lines
-/// that follow until the next label.
-fn slots(data: &[Line], labels: &asm::Program) -> Vec<Slot> {
-    let mut found = vec![];
-    for (i, line) in data.iter().enumerate() {
-        let Kind::Table { label, resource } = &line.kind else {
-            continue;
-        };
-        let first = data.get(i + 1).is_some_and(|l| matches!(l.kind, Kind::Dat(Some(_), _)));
-        let rest = data
-            .iter()
-            .skip(i + 2)
-            .take_while(|l| matches!(l.kind, Kind::Dat(None, _)))
-            .count();
-        let len = if first { 1 + rest } else { 0 };
-        if let Some(&at) = labels.labels.get(label) {
-            found.push(Slot {
-                name: resource.clone(),
-                at,
-                len,
-                bound: false,
-            });
-        }
-    }
-    found.sort_by_key(|t| t.at);
-    found
 }
 
 /// Whether a word of a `.tape` comment is a number.
@@ -91,49 +60,6 @@ pub fn values(text: &str) -> Result<Vec<i32>, String> {
 }
 
 impl Tape {
-    /// The tape of a compiled program, from what `split_phases` made of it, its slots empty. The first phase loads
-    /// onto cleared memory, so its cells that hold 0 are left off (but not a slot's: those cards are filled in when
-    /// it is bound); a later phase loads over the one before, so all of its cells are punched.
-    pub fn of(r: &Phases) -> Result<Tape, String> {
-        let mut phases = vec![];
-        let mut found = vec![];
-        let data = r.data_text();
-        let data_end = asm::assemble(3, &data)?.end;
-        for i in 0..r.code.len() {
-            let c = r.code_text(i);
-            let text = if r.code.len() == 1 {
-                format!("{c}{data}")
-            } else {
-                format!("{data}\n{c}")
-            };
-            let p = asm::assemble(3, &text)?;
-            if i == 0 {
-                found = slots(&r.data, &p);
-            }
-            let in_slot = |a: i32| found.iter().any(|t| a >= t.at && a < t.at + t.len as i32);
-            let cells: Vec<(i32, i32)> = p
-                .cells
-                .iter()
-                .copied()
-                .filter(|&(a, v)| {
-                    if i == 0 {
-                        v != 0 || in_slot(a)
-                    } else {
-                        r.code.len() == 1 || a >= data_end
-                    }
-                })
-                .collect();
-            let start = if i == 0 {
-                "start".to_string()
-            } else {
-                format!("p{}", i + 1)
-            };
-            let at = *p.labels.get(&start).ok_or(format!("no label {start}"))?;
-            phases.push(asm::tape(at, &cells));
-        }
-        Ok(Tape { phases, slots: found })
-    }
-
     /// A tape of one phase.
     pub fn one(cards: Vec<i32>) -> Tape {
         Tape {
@@ -342,6 +268,7 @@ impl Tape {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asm;
 
     /// A program that prints its two-cell resource, then each card of its input, until the reader is empty.
     const PRINTS: &str = "start: OUT t\n OUT t+1\nnext: INP c\n OUT c\n JMP next\nc: DAT 0\nt: DAT 0\n DAT 0\n";
