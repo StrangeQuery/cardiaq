@@ -3,9 +3,10 @@
 //! A tape starts with the two-card loader (002, 800), then an address card and a value card for each cell of the
 //! program, then a card that jumps to its start (see `asm::tape`). The program's input comes after it.
 //!
-//! A program in phases (`overlay()`) has a tape for each phase. Each phase ends with JMP 00, the loader, and the
-//! next phase's tape goes in the reader then, ahead of whatever input is left (`cardiac::run_phases`). So the input
-//! is one stream, read in order whichever phase reads it, as it is natively.
+//! A program in phases (`overlay()`) has a tape for each phase. Each phase ends with HRS n, a stop with the bug on
+//! the tape to load next (the overlay convention), and that tape goes in the reader then, ahead of whatever input
+//! is left, the loader started at 00 (`cardiac::run_phases`). So the input is one stream, read in order whichever
+//! phase reads it, as it is natively.
 //!
 //! A resource (`load_resource("NAME")`) is a slot on the first phase's tape: cells whose value cards the loader
 //! fills with the resource's values, when the tape is built or loaded (`Tape::bind`). A tape whose slots are all
@@ -147,7 +148,7 @@ impl Tape {
             "# {title}\n# CARDIAC cards, one per line, read from the top. The program's input goes after them.\n"
         );
         if self.phases.len() > 1 {
-            s += "# A program in phases: each later phase's tape goes in the reader when the one before ends (JMP 00).\n";
+            s += "# A program in phases: a stop with the bug on N (HRS N) asks for tape N, which goes in the reader before the input left; then start at 00.\n";
         }
         for t in &self.slots {
             s += &format!(
@@ -428,8 +429,9 @@ mod tests {
 
     #[test]
     fn a_later_phase_is_read_when_the_one_before_ends() {
-        // phase 1 reads a card, prints it and ends (JMP 00); phase 2, loaded over it, reads the next card and prints it
-        let one = asm::tape(3, &[(3, 10), (4, 510), (5, 800), (10, 0)]);
+        // phase 1 reads a card, prints it and stops for tape 2 (HRS 2); phase 2, loaded over it, reads the next card
+        // and prints it
+        let one = asm::tape(3, &[(3, 10), (4, 510), (5, 902), (10, 0)]);
         let two = asm::tape(3, &[(3, 11), (4, 511), (5, 900)]);
         let t = Tape {
             phases: vec![one, two],

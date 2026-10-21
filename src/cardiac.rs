@@ -129,19 +129,38 @@ const POW10: [i32; 10] = [
 ];
 
 /// Run a cleared CARDIAC on a deck made of `parts` (read one after another), punching into `out`.
-/// Returns why it stopped and how many instructions it executed.
+/// Returns why it stopped and how many instructions it executed. HRS halts, whatever its address.
 ///
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
 pub fn run(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) {
-    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, |_| None);
+    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, Overlay::Off, |_| None);
     (ended.stop, ended.steps)
 }
 
-/// `run`, for a program in phases whose input is one stream: `next(k)` gives phase k + 2's tape (k = 0, 1, ...)
-/// when the program ends a phase, so it is read next, ahead of whatever input is still in the reader. A phase ends
-/// with JMP 00 anywhere but cell 02 (where it is the loader's own jump); the reader is then loaded with the next
-/// phase's tape.
+/// `run`, for a program in phases in overlay mode, its phases stacked in the deck: each later tape after the cards
+/// the phase before reads. At a stop for tape n (HRS n, the overlay convention) the reader holds it next, and the
+/// operator starts the loader at 00; with no card left it is a halt, as is a stop with the bug on 00.
+pub fn run_stacked(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) {
+    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, Overlay::Stacked, |_| None);
+    (ended.stop, ended.steps)
+}
+
+/// How a stop with the bug on a cell other than 00 is taken: by the overlay convention, as a request for that tape,
+/// or not at all (a halt, as for any program not in phases).
+#[derive(Clone, Copy, PartialEq)]
+enum Overlay {
+    Off,
+    /// the tapes are in the deck already
+    Stacked,
+    /// the tapes are given when asked for
+    Fed,
+}
+
+/// `run`, for a program in phases whose input is one stream, run as its operator would: `next(k)` gives tape
+/// k + 2 (k = 0, 1, ...). By the overlay convention a phase ends with HRS n, the machine stopped with the bug on
+/// the tape to load next (on 00 it is done); the operator puts tape n in the reader, ahead of whatever input is
+/// still there, and starts the loader at 00.
 pub fn run_phases<'a>(
     first: &'a [i32],
     input: &'a [i32],
@@ -149,9 +168,14 @@ pub fn run_phases<'a>(
     out: &mut impl Console,
     limit: u64,
 ) -> (Stop, u64) {
-    let ended = run_feeding::<false>(&[first, input], &mut std::iter::empty(), out, limit, |k| {
-        later.get(k).map(|t| t.as_slice())
-    });
+    let ended = run_feeding::<false>(
+        &[first, input],
+        &mut std::iter::empty(),
+        out,
+        limit,
+        Overlay::Fed,
+        |k| later.get(k).map(|t| t.as_slice()),
+    );
     (ended.stop, ended.steps)
 }
 
@@ -178,19 +202,21 @@ pub fn run_reading<'a, const TRACE: bool>(
     out: &mut impl Console,
     limit: u64,
 ) -> Ended {
-    run_feeding::<TRACE>(&[first, input], more, out, limit, |k| {
+    run_feeding::<TRACE>(&[first, input], more, out, limit, Overlay::Fed, |k| {
         later.get(k).map(|t| t.as_slice())
     })
 }
 
 /// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more. Once `parts`
-/// are read, INP takes its cards from `more`.
+/// are read, INP takes its cards from `more`. In overlay mode, `next` gives a later phase's tape when the program
+/// stops for it, unless the deck holds it already (`Overlay`).
 #[inline(always)]
 fn run_feeding<'a, const TRACE: bool>(
     parts: &[&'a [i32]],
     more: &mut impl Iterator<Item = i32>,
     out: &mut impl Console,
     limit: u64,
+    overlay: Overlay,
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
     let mut m = [0i32; 100];
@@ -207,7 +233,7 @@ fn run_feeding<'a, const TRACE: bool>(
     let (mut acc, mut pc, mut steps) = (0i32, 0usize, 0u64);
     let (mut part, mut card) = (0usize, 0usize);
     let mut cur: &[i32] = parts.first().copied().unwrap_or(&[]);
-    // a phase's tape fed in ahead of the rest: where the reader was in the deck, and how many phases were fed
+    // a phase's tape fed in ahead of the rest: where the reader was in the deck; and the phase loaded, less one
     let mut held: Option<(&[i32], usize)> = None;
     let mut fed = 0;
     let mut trail = [0usize; 3];
@@ -283,29 +309,38 @@ fn run_feeding<'a, const TRACE: bool>(
             }
             Op::Sub => acc = wrap4(acc - m[a]),
             Op::Jmp => {
-                if a == 0 && pc != 3 {
-                    // (the last phase fed has been read to its end: the reader is back in the deck)
-                    if card >= cur.len() {
-                        if let Some((c, k)) = held.take() {
-                            cur = c;
-                            card = k;
-                        }
-                    }
-                    if held.is_none() {
-                        if let Some(t) = next(fed) {
-                            fed += 1;
-                            out.phase(fed + 1, At { steps, cell: here });
-                            held = Some((cur, card));
-                            cur = t;
-                            card = 0;
-                        }
-                    }
-                }
                 m[99] = 800 + pc as i32;
                 dec[99] = decode(m[99]);
                 pc = a;
             }
-            Op::Hrs => return ended(Stop::Halt, steps, trail, fed, m, acc),
+            Op::Hrs => {
+                // the overlay convention: a stop with the bug on n asks for tape n (the bug on 00 is done). The
+                // operator puts it in the reader, ahead of whatever input is left, and starts the loader at 00
+                // (the last tape fed has been read to its end by then: the reader is back in the deck)
+                if card >= cur.len() {
+                    if let Some((c, k)) = held.take() {
+                        cur = c;
+                        card = k;
+                    }
+                }
+                // (stacked, the tape is the rest of the deck: with no card left, it is a plain halt)
+                let left = card < cur.len() || parts[part + 1..].iter().any(|p| !p.is_empty());
+                if a == 0 || overlay == Overlay::Off || (overlay == Overlay::Stacked && !left) {
+                    return ended(Stop::Halt, steps, trail, fed, m, acc);
+                }
+                if overlay == Overlay::Fed {
+                    let tape = if a >= 2 && held.is_none() { next(a - 2) } else { None };
+                    let Some(t) = tape else {
+                        return ended(Stop::Halt, steps, trail, fed, m, acc);
+                    };
+                    held = Some((cur, card));
+                    cur = t;
+                    card = 0;
+                }
+                fed = a - 1;
+                out.phase(a, At { steps, cell: here });
+                pc = 0;
+            }
             Op::Skip => {}
         }
     }
@@ -325,5 +360,24 @@ mod tests {
         let (stop, _) = run(&[&deck], &mut out, 1000);
         assert_eq!(stop, Stop::Halt);
         assert_eq!(out, vec![42]);
+    }
+
+    #[test]
+    fn a_stacked_deck_runs_on_at_a_stop_for_a_tape() {
+        // phase 1 (03 INP 10, 04 OUT 10, 05 HRS 02) and its card, 5; then tape 2 (03 INP 11, 04 OUT 11, 05 HRS 00)
+        // and its card, 6: at HRS 02 the operator starts the loader at 00, and it reads tape 2 off the deck
+        let one = [2, 800, 3, 10, 4, 510, 5, 902, 2, 803];
+        let two = [2, 800, 3, 11, 4, 511, 5, 900, 2, 803];
+        let mut out = vec![];
+        let (stop, _) = run_stacked(&[&one, &[5], &two, &[6]], &mut out, 1000);
+        assert_eq!((stop, out), (Stop::Halt, vec![5, 6]));
+        // with no card left after the stop it is a plain halt
+        let mut out = vec![];
+        let (stop, _) = run_stacked(&[&one, &[5]], &mut out, 1000);
+        assert_eq!((stop, out), (Stop::Halt, vec![5]));
+        // and not in overlay mode, HRS 02 halts, the rest of the deck unread
+        let mut out = vec![];
+        let (stop, _) = run(&[&one, &[5], &two, &[6]], &mut out, 1000);
+        assert_eq!((stop, out), (Stop::Halt, vec![5]));
     }
 }
