@@ -32,8 +32,8 @@ when the cell is written (CARDIAC programs rewrite their own code all the time, 
 of every word's decoding, for 100 cells; the accumulator wraps by a compare, not a division; JMP writes cell 99
 already decoded; a 101st decoded cell sends the bug round to 00, so no step checks for it; tracing, for saying
 where a run stopped, is a compile-time switch that costs nothing when it is off; the loop allocates nothing.
-Where it goes next: fewer cycles a step, the idioms CARDIAC code is made of (an indexed load is four instructions
-of self-modifying code) done as one, and code compiled to native as it runs.
+Where it goes next: fewer cycles a step, and the idioms CARDIAC code is made of (an indexed load is four
+instructions of self-modifying code) done as one. No JIT: an interpreter, as fast as one can be made to go.
 
 ## Use
 
