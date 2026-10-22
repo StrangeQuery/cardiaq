@@ -82,12 +82,13 @@ enum Op {
     /// A negative word reached as an instruction: skipped, as Brian Stuart's simulator does, which keeps the negative
     /// words free for instructions to come (#106)
     Skip,
+    /// Past cell 99: the bug goes round to 00. Not an instruction, and not counted as one; it is only ever at the
+    /// end of the decoded cells, so the step itself never checks for the wrap.
+    Wrap,
 }
 
-/// A match, not a lookup table: `decode` runs on every write to a cell, and a table there makes the whole emulator
-/// about a third slower.
-#[inline(always)]
-fn op(d: i32) -> Op {
+/// The instruction a first digit stands for (`DECODED` is built from it).
+const fn op(d: i32) -> Op {
     match d {
         0 => Op::Inp,
         1 => Op::Cla,
@@ -105,24 +106,38 @@ fn op(d: i32) -> Op {
 /// The accumulator holds four digits and a sign; anything beyond is lost off the top.
 #[inline(always)]
 fn wrap4(v: i32) -> i32 {
-    let x = v.abs() % 10000;
-    if v < 0 {
-        -x
+    // ADD and SUB take an accumulator of -9999..9999 and a cell of -999..999, so the sum is within ten thousand of
+    // the range: a compare, not a division
+    debug_assert!((-10998..=10998).contains(&v));
+    if v > 9999 {
+        v - 10000
+    } else if v < -9999 {
+        v + 10000
     } else {
-        x
+        v
     }
 }
 
 /// A cell holds three digits and a sign: STO keeps the low three.
 #[inline(always)]
 fn wrap3(v: i32) -> i32 {
-    let x = v.abs() % 1000;
-    if v < 0 {
-        -x
-    } else {
-        x
-    }
+    // Rust's remainder takes the dividend's sign: -1234 % 1000 is -234
+    v % 1000
 }
+
+/// Every word's decoding, -999..999, worked out when HEARTBURN is compiled: a store looks its word up. A negative
+/// word is skipped (#106), and so is STO 00, which can't change the wired cell 00: decided here, not at every STO.
+static DECODED: [(Op, u8); 1999] = {
+    let mut t = [(Op::Skip, 0u8); 1999];
+    let mut w = 0;
+    while w <= 999 {
+        if w != 600 {
+            t[(w + 999) as usize] = (op((w / 100) % 10), (w % 100) as u8);
+        }
+        w += 1;
+    }
+    t
+};
 
 const POW10: [i32; 10] = [
     1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
@@ -220,13 +235,11 @@ fn run_feeding<'a, const TRACE: bool>(
     mut next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
     let mut m = [0i32; 100];
-    let mut dec = [(Op::Inp, 0u8); 100];
+    let mut dec = [(Op::Inp, 0u8); 101];
+    dec[100] = (Op::Wrap, 0);
     #[inline(always)]
     fn decode(w: i32) -> (Op, u8) {
-        if w < 0 {
-            return (Op::Skip, 0);
-        }
-        (op((w / 100) % 10), (w % 100) as u8)
+        DECODED[(w + 999) as usize]
     }
     m[0] = 1;
     dec[0] = decode(1);
@@ -247,6 +260,7 @@ fn run_feeding<'a, const TRACE: bool>(
     };
     while steps < limit {
         steps += 1;
+        let before = trail;
         if TRACE {
             trail = [trail[1], trail[2], pc];
         }
@@ -254,9 +268,6 @@ fn run_feeding<'a, const TRACE: bool>(
         let a = a as usize;
         let here = pc;
         pc += 1;
-        if pc == 100 {
-            pc = 0;
-        }
         match op {
             Op::Inp => {
                 let next_card = loop {
@@ -302,15 +313,13 @@ fn run_feeding<'a, const TRACE: bool>(
             }
             Op::Out => out.punch_at(m[a], At { steps, cell: here }),
             Op::Sto => {
-                if a != 0 {
-                    m[a] = wrap3(acc);
-                    dec[a] = decode(m[a]);
-                }
+                m[a] = wrap3(acc);
+                dec[a] = decode(m[a]);
             }
             Op::Sub => acc = wrap4(acc - m[a]),
             Op::Jmp => {
                 m[99] = 800 + pc as i32;
-                dec[99] = decode(m[99]);
+                dec[99] = (Op::Jmp, pc as u8);
                 pc = a;
             }
             Op::Hrs => {
@@ -342,6 +351,12 @@ fn run_feeding<'a, const TRACE: bool>(
                 pc = 0;
             }
             Op::Skip => {}
+            Op::Wrap => {
+                // (here is 100: the step before ran cell 99 and went on)
+                steps -= 1;
+                trail = before;
+                pc = 0;
+            }
         }
     }
     ended(Stop::Limit, steps, trail, fed, m, acc)
@@ -360,6 +375,20 @@ mod tests {
         let (stop, _) = run(&[&deck], &mut out, 1000);
         assert_eq!(stop, Stop::Halt);
         assert_eq!(out, vec![42]);
+    }
+
+    #[test]
+    fn the_bug_goes_round_from_99_to_00() {
+        // every JMP writes cell 99, the loader's too, so the program puts an instruction there itself: 95 CLA 90
+        // (CLA 91), 96 STO 99, 97 OUT 91 (42), 98 CLA 91, 99 CLA 91, and on, past 99, to cell 00: INP 01 reads the
+        // next card, 900, HRS, into 01, which runs it. Nothing is counted for the wrap
+        let deck = [2, 800, 90, 191, 91, 42, 95, 190, 96, 699, 97, 591, 98, 191, 2, 895, 900];
+        let mut out = vec![];
+        let (stop, steps) = run(&[&deck], &mut out, 1000);
+        let mut traced = vec![];
+        let end = run_traced(&deck, &[], &[], &mut traced, 1000);
+        assert_eq!((stop, out, traced), (Stop::Halt, vec![42], vec![42]));
+        assert_eq!((end.steps, end.trail), (steps, [99, 0, 1]));
     }
 
     #[test]
