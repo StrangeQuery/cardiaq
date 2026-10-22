@@ -22,8 +22,8 @@ the same program on the CARDIAC emulators that could be built and run here (Octo
 | weibell/python-cardiac-emu        | Python 3.9 | 2.4                           | 417 ns          |
 | rzinkstok/cardiac                 | Python 3.9 | 1.25                          | 800 ns          |
 
-On real programs, the 109 machines of the demo HOLOCENE (4.5 billion instructions, every card checked against the
-same programs compiled natively), it runs about 760 million a second: 8 times slower than native Rust doing the
+On real programs, 109 compiled CARDIAC machines (4.5 billion instructions, every card checked against the same
+programs compiled natively), it runs about 760 million a second: 8 times slower than native Rust doing the
 same work, with each CARDIAC instruction doing a fraction of what one native instruction does. (It started at 510
 million, 12 times; the first round of tuning is in the history.)
 
