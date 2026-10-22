@@ -35,6 +35,10 @@ where a run stopped, is a compile-time switch that costs nothing when it is off;
 Where it goes next: fewer cycles a step, and the idioms CARDIAC code is made of (an indexed load is four
 instructions of self-modifying code) done as one. No JIT: an interpreter, as fast as one can be made to go.
 
+## Install
+
+    cargo install heartburn
+
 ## Use
 
     heartburn run hello.tape            # each card punched, as it is punched
@@ -48,5 +52,19 @@ the start. A program too big for memory comes in phases, a tape each. By the ove
 with the bug on the number of the tape to load next (HRS n; on 00 it is done), and the operator, here HEARTBURN,
 puts that tape in the reader and starts the loader at 00.
 
-As a library, HEARTBURN is what [rust-cardiac](https://github.com/StrangeQuery/rust-cardiac), which compiles Rust
-for CARDIAC, runs its programs on.
+## As a library
+
+```rust
+use heartburn::{asm, tape::Tape};
+
+let program = asm::assemble(3, "start: INP a\n INP b\n CLA a\n ADD b\n STO a\n OUT a\n HRS 0\na: DAT 0\nb: DAT 0\n")?;
+let tape = Tape::one(asm::tape(program.label("start"), &program.cells));
+let (punched, why, steps) = tape.run(&[2, 3], 1_000)?;   // [5], Halt, 39 instructions
+```
+
+`examples/add.rs` is this, runnable: `cargo run --example add`. `cardiac::run` runs a deck directly, and
+`cardiac::run_stacked` a program in phases.
+
+## License
+
+MIT.
