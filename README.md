@@ -16,19 +16,22 @@ the same program on the CARDIAC emulators that could be built and run here (Octo
 
 | emulator                          | language   | million instructions a second | per instruction |
 |-----------------------------------|------------|-------------------------------|-----------------|
-| **HEARTBURN**                     | Rust       | **784**                       | **1.3 ns**      |
+| **HEARTBURN**                     | Rust       | **1,070**                     | **0.94 ns**     |
 | InPermutation/CARDIAC `cem.c`     | C (`-O2`)  | 438                           | 2.3 ns          |
 | fzaca/CardiacVisualizer           | Rust       | 110                           | 9.1 ns          |
 | weibell/python-cardiac-emu        | Python 3.9 | 2.4                           | 417 ns          |
 | rzinkstok/cardiac                 | Python 3.9 | 1.25                          | 800 ns          |
 
 On real programs, the 109 machines of the demo HOLOCENE (4.5 billion instructions, every card checked against the
-same programs compiled natively), it runs about 510 million a second: 12 times slower than native Rust doing the
-same work, with each CARDIAC instruction doing a fraction of what one native instruction does.
+same programs compiled natively), it runs about 760 million a second: 8 times slower than native Rust doing the
+same work, with each CARDIAC instruction doing a fraction of what one native instruction does. (It started at 510
+million, 12 times; the first round of tuning is in the history.)
 
 How it gets there, so far: each cell's instruction is decoded once and kept beside its value, decoded again only
-when the cell is written (CARDIAC programs rewrite their own code all the time, to index arrays); tracing, for
-saying where a run stopped, is a compile-time switch that costs nothing when it is off; the loop allocates nothing.
+when the cell is written (CARDIAC programs rewrite their own code all the time, to index arrays), from a 4 KB table
+of every word's decoding, for 100 cells; the accumulator wraps by a compare, not a division; JMP writes cell 99
+already decoded; a 101st decoded cell sends the bug round to 00, so no step checks for it; tracing, for saying
+where a run stopped, is a compile-time switch that costs nothing when it is off; the loop allocates nothing.
 Where it goes next: fewer cycles a step, the idioms CARDIAC code is made of (an indexed load is four instructions
 of self-modifying code) done as one, and code compiled to native as it runs.
 
