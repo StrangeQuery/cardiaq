@@ -78,8 +78,8 @@ fn the_manuals_programs_in_six_columns() {
 fn tapes_to_listings_and_back() {
     let d = dir("tapes");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    heartburn(&["tape", "examples/sortem/sortem-1.lst", "-o", &t("sortem.tape")]);
-    heartburn(&["tape", "examples/sortem/sortem-2.lst", "-o", &t("sortem.2.tape")]);
+    heartburn(&["tape", "tests/sortem/sortem-1.lst", "-o", &t("sortem.tape")]);
+    heartburn(&["tape", "tests/sortem/sortem-2.lst", "-o", &t("sortem.2.tape")]);
     heartburn(&["listing", &t("sortem.tape"), "-o", &t("again.lst")]);
     assert!(d.join("again.2.lst").is_file());
     heartburn(&["tape", &t("again.lst"), "-o", &t("again.tape")]);

@@ -160,6 +160,8 @@ fn a_listing_runs_the_same_from_its_tape() {
     assert_eq!(tape.run(&[269], 1000).unwrap().0, [962]);
 }
 
+/// sortem (cardiac-code keeps it with the other sample programs; tests/sortem is a copy, as a program big enough to
+/// need two tapes) sorts and summarises its numbers in one tape and in two.
 #[test]
 fn sortem_sorts_in_one_phase_and_in_two() {
     let deck = |text: &str| {
@@ -168,12 +170,12 @@ fn sortem_sorts_in_one_phase_and_in_two() {
         };
         listing::deck(3, &cells).unwrap()
     };
-    let one = heartburn::tape::Tape::one(deck(include_str!("../examples/sortem/sortem.lst")));
+    let one = heartburn::tape::Tape::one(deck(include_str!("sortem/sortem.lst")));
     assert_eq!(one.run(&[31, 7], 100_000).unwrap().0, [7, 31, 19, 7, 31, 31]);
     let two = heartburn::tape::Tape {
         phases: vec![
-            deck(include_str!("../examples/sortem/sortem-1.lst")),
-            deck(include_str!("../examples/sortem/sortem-2.lst")),
+            deck(include_str!("sortem/sortem-1.lst")),
+            deck(include_str!("sortem/sortem-2.lst")),
         ],
         slots: vec![],
     };

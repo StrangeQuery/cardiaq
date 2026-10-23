@@ -8,7 +8,7 @@ trail and the cards left in the reader.
     python3 test/compare.py
 
 Needs Playwright for Python and its Chromium. The cases are the manual's programs (tests/manual), sortem in two
-tapes (examples/sortem), tapes fed in any order, the quine, breakpoints, blocking input and stepping.
+tapes (tests/sortem), tapes fed in any order, the quine, breakpoints, blocking input and stepping.
 """
 import base64
 import pathlib
@@ -63,7 +63,7 @@ def words(xs):
 
 
 M = ROOT / "tests" / "manual"
-S = ROOT / "examples" / "sortem"
+S = ROOT / "tests" / "sortem"
 CASES = {}
 
 # the manual's programs written straight into memory, their input given card by card as INP waits
