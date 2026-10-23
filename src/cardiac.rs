@@ -85,6 +85,9 @@ enum Op {
     /// Past cell 99: the bug goes round to 00. Not an instruction, and not counted as one; it is only ever at the
     /// end of the decoded cells, so the step itself never checks for the wrap.
     Wrap,
+    /// A breakpoint (`Machine`), in place of its cell's decoding: it stops the run before the cell runs. Never
+    /// decoded in a plain run.
+    Break,
 }
 
 /// The instruction a first digit stands for (`DECODED` is built from it).
@@ -258,40 +261,206 @@ fn run_feeding<'a, const TRACE: bool>(
     out: &mut impl Console,
     limit: u64,
     overlay: Overlay,
-    mut next: impl FnMut(usize) -> Option<&'a [i32]>,
+    next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
-    let mut m = [0i32; 100];
-    let mut dec = [(Op::Inp, 0u8); 101];
-    dec[100] = (Op::Wrap, 0);
-    #[inline(always)]
-    fn decode(w: i32) -> (Op, u8) {
-        DECODED[(w + 999) as usize]
-    }
-    let mut pc = 0usize;
+    let mut s = Core::cleared();
     if let Some((mem, at)) = from {
         for (a, &w) in mem.iter().enumerate() {
-            m[a] = w;
-            dec[a] = decode(w);
+            s.m[a] = w;
+            s.dec[a] = decode(w);
         }
-        pc = at;
+        s.m[0] = 1;
+        s.dec[0] = decode(1);
+        s.pc = at;
     }
-    m[0] = 1;
-    dec[0] = decode(1);
-    let (mut acc, mut steps) = (0i32, 0u64);
-    let (mut part, mut card) = (0usize, 0usize);
-    let mut cur: &[i32] = parts.first().copied().unwrap_or(&[]);
-    // a phase's tape fed in ahead of the rest: where the reader was in the deck; and the phase loaded, less one
-    let mut held: Option<(&[i32], usize)> = None;
-    let mut fed = 0;
-    let mut trail = [0usize; 3];
-    let ended = |stop, steps, trail, fed, m, acc| Ended {
-        stop,
-        steps,
-        trail,
-        phase: fed + 1,
-        memory: m,
-        acc,
+    let mut reader = Deck {
+        parts,
+        part: 0,
+        cur: parts.first().copied().unwrap_or(&[]),
+        card: 0,
+        held: None,
+        more,
+        overlay,
+        next,
     };
+    let stop = match exec::<TRACE, false>(&mut s, &mut reader, out, limit) {
+        End::Halt => Stop::Halt,
+        End::OutOfCards => Stop::OutOfCards,
+        _ => Stop::Limit,
+    };
+    Ended {
+        stop,
+        steps: s.steps,
+        trail: s.trail,
+        phase: s.fed + 1,
+        memory: s.m,
+        acc: s.acc,
+    }
+}
+
+#[inline(always)]
+fn decode(w: i32) -> (Op, u8) {
+    DECODED[(w + 999) as usize]
+}
+
+/// The machine's state: memory, each cell decoded beside it (and a 101st entry, the wrap to 00), the accumulator,
+/// the bug, the instructions run, and (for a debugger) the breakpoints.
+#[derive(Clone)]
+struct Core {
+    m: [i32; 100],
+    dec: [(Op, u8); 101],
+    acc: i32,
+    pc: usize,
+    steps: u64,
+    /// the cells of the last three instructions run (TRACE)
+    trail: [usize; 3],
+    /// the phase loaded, less one
+    fed: usize,
+    breaks: [bool; 100],
+}
+
+impl Core {
+    #[inline(always)]
+    fn cleared() -> Core {
+        let mut dec = [(Op::Inp, 0u8); 101];
+        dec[100] = (Op::Wrap, 0);
+        let mut m = [0i32; 100];
+        m[0] = 1;
+        dec[0] = decode(1);
+        Core {
+            m,
+            dec,
+            acc: 0,
+            pc: 0,
+            steps: 0,
+            trail: [0; 3],
+            fed: 0,
+            breaks: [false; 100],
+        }
+    }
+}
+
+/// Where INP's cards come from, and what a stop for tape n (HRS n, n > 0) does.
+trait Reader {
+    fn card(&mut self) -> Option<i32>;
+    /// Put tape `n` in the reader, ahead of whatever is left, for the loader to read from 00: whether there is one.
+    fn tape(&mut self, n: usize) -> bool;
+}
+
+/// The reader of a plain run: `parts` one after another, then `more`; in overlay mode the later tapes, by `next`.
+struct Deck<'a, 'm, M, N> {
+    parts: &'m [&'a [i32]],
+    part: usize,
+    cur: &'a [i32],
+    card: usize,
+    /// a phase's tape fed in ahead of the rest: where the reader was in the deck
+    held: Option<(&'a [i32], usize)>,
+    more: &'m mut M,
+    overlay: Overlay,
+    next: N,
+}
+
+impl<'a, M: Iterator<Item = i32>, N: FnMut(usize) -> Option<&'a [i32]>> Reader for Deck<'a, '_, M, N> {
+    #[inline(always)]
+    fn card(&mut self) -> Option<i32> {
+        loop {
+            if self.card < self.cur.len() {
+                self.card += 1;
+                return Some(self.cur[self.card - 1]);
+            }
+            if let Some((c, k)) = self.held.take() {
+                self.cur = c;
+                self.card = k;
+                continue;
+            }
+            if self.part + 1 < self.parts.len() {
+                self.part += 1;
+                self.cur = self.parts[self.part];
+                self.card = 0;
+                continue;
+            }
+            // the deck is read: the next card is asked for now, as this INP runs
+            return self.more.next();
+        }
+    }
+
+    #[inline(always)]
+    fn tape(&mut self, n: usize) -> bool {
+        // the last tape fed has been read to its end by now: the reader is back in the deck
+        if self.card >= self.cur.len() {
+            if let Some((c, k)) = self.held.take() {
+                self.cur = c;
+                self.card = k;
+            }
+        }
+        match self.overlay {
+            Overlay::Off => false,
+            // stacked, the tape is the rest of the deck: with no card left, it is a plain halt
+            Overlay::Stacked => self.card < self.cur.len() || self.parts[self.part + 1..].iter().any(|p| !p.is_empty()),
+            Overlay::Fed => {
+                let tape = if n >= 2 && self.held.is_none() {
+                    (self.next)(n - 2)
+                } else {
+                    None
+                };
+                let Some(t) = tape else {
+                    return false;
+                };
+                self.held = Some((self.cur, self.card));
+                self.cur = t;
+                self.card = 0;
+                true
+            }
+        }
+    }
+}
+
+/// How `exec` ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum End {
+    Halt,
+    OutOfCards,
+    Limit,
+    /// (DEBUG) at a breakpoint, before the cell's instruction
+    Break,
+    /// (DEBUG) tape n went into the reader, the bug on 00
+    Fed(usize),
+}
+
+/// The machine, run on `s` until it stops or has run `limit` instructions in all. With DEBUG off it is the plain
+/// machine and costs nothing more for the debugger: no `Break` is ever decoded, and a stop is only a halt, the
+/// reader running dry or the limit. With DEBUG on, a breakpoint is a `Break` in the decoded cells, put back
+/// whenever its cell is written, so it costs nothing per instruction either; an INP with no card leaves the bug on
+/// it, uncounted, to run again once there is one; a stop for a tape ends the run with the tape in the reader; and a
+/// halt leaves the bug on HRS's address, as the cardboard machine's does.
+#[inline(always)]
+fn exec<const TRACE: bool, const DEBUG: bool>(
+    s: &mut Core,
+    r: &mut impl Reader,
+    out: &mut impl Console,
+    limit: u64,
+) -> End {
+    let (mut acc, mut pc, mut steps, mut trail) = (s.acc, s.pc, s.steps, s.trail);
+    let m = &mut s.m;
+    let dec = &mut s.dec;
+    let breaks = &s.breaks;
+    // put a breakpoint back over a cell just written
+    macro_rules! rebreak {
+        ($a:expr) => {
+            if DEBUG && breaks[$a] {
+                dec[$a] = (Op::Break, 0);
+            }
+        };
+    }
+    macro_rules! end {
+        ($why:expr) => {{
+            s.acc = acc;
+            s.pc = pc;
+            s.steps = steps;
+            s.trail = trail;
+            return $why;
+        }};
+    }
     while steps < limit {
         steps += 1;
         let before = trail;
@@ -304,32 +473,20 @@ fn run_feeding<'a, const TRACE: bool>(
         pc += 1;
         match op {
             Op::Inp => {
-                let next_card = loop {
-                    if card < cur.len() {
-                        card += 1;
-                        break Some(cur[card - 1]);
+                let Some(c) = r.card() else {
+                    if DEBUG {
+                        // waiting for a card: the INP runs again when there is one
+                        steps -= 1;
+                        trail = before;
+                        pc = here;
                     }
-                    if let Some((c, k)) = held.take() {
-                        cur = c;
-                        card = k;
-                        continue;
-                    }
-                    if part + 1 < parts.len() {
-                        part += 1;
-                        cur = parts[part];
-                        card = 0;
-                        continue;
-                    }
-                    // the deck is read: the next card is asked for now, as this INP runs
-                    break more.next();
-                };
-                let Some(c) = next_card else {
-                    return ended(Stop::OutOfCards, steps, trail, fed, m, acc);
+                    end!(End::OutOfCards)
                 };
                 out.read(c, At { steps, cell: here });
                 if a != 0 {
                     m[a] = c;
                     dec[a] = decode(m[a]);
+                    rebreak!(a);
                 }
             }
             Op::Cla => acc = m[a],
@@ -349,40 +506,30 @@ fn run_feeding<'a, const TRACE: bool>(
             Op::Sto => {
                 m[a] = wrap3(acc);
                 dec[a] = decode(m[a]);
+                rebreak!(a);
             }
             Op::Sub => acc = wrap4(acc - m[a]),
             Op::Jmp => {
                 m[99] = 800 + pc as i32;
                 dec[99] = (Op::Jmp, pc as u8);
+                rebreak!(99);
                 pc = a;
             }
             Op::Hrs => {
                 // the overlay convention: a stop with the bug on n asks for tape n (the bug on 00 is done). The
                 // operator puts it in the reader, ahead of whatever input is left, and starts the loader at 00
-                // (the last tape fed has been read to its end by then: the reader is back in the deck)
-                if card >= cur.len() {
-                    if let Some((c, k)) = held.take() {
-                        cur = c;
-                        card = k;
+                if a == 0 || !r.tape(a) {
+                    if DEBUG {
+                        pc = a;
                     }
+                    end!(End::Halt)
                 }
-                // (stacked, the tape is the rest of the deck: with no card left, it is a plain halt)
-                let left = card < cur.len() || parts[part + 1..].iter().any(|p| !p.is_empty());
-                if a == 0 || overlay == Overlay::Off || (overlay == Overlay::Stacked && !left) {
-                    return ended(Stop::Halt, steps, trail, fed, m, acc);
-                }
-                if overlay == Overlay::Fed {
-                    let tape = if a >= 2 && held.is_none() { next(a - 2) } else { None };
-                    let Some(t) = tape else {
-                        return ended(Stop::Halt, steps, trail, fed, m, acc);
-                    };
-                    held = Some((cur, card));
-                    cur = t;
-                    card = 0;
-                }
-                fed = a - 1;
+                s.fed = a - 1;
                 out.phase(a, At { steps, cell: here });
                 pc = 0;
+                if DEBUG {
+                    end!(End::Fed(a))
+                }
             }
             Op::Skip => {}
             Op::Wrap => {
@@ -391,9 +538,229 @@ fn run_feeding<'a, const TRACE: bool>(
                 trail = before;
                 pc = 0;
             }
+            Op::Break => {
+                // (only ever decoded with DEBUG on) stopped before the cell's instruction, which hasn't run
+                steps -= 1;
+                trail = before;
+                pc = here;
+                end!(End::Break)
+            }
         }
     }
-    ended(Stop::Limit, steps, trail, fed, m, acc)
+    end!(End::Limit)
+}
+
+/// Why a `Machine` stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    /// HRS: the bug is on its address (on 00, or with no tape for it, the program is done)
+    Halt,
+    /// at a breakpoint, before its cell's instruction runs
+    Break,
+    /// an INP with no card in the reader: the bug is on the INP, which runs once a card is put in (`push`)
+    Input,
+    /// HRS n: tape n is in the reader and the bug on 00, to load it
+    Tape(usize),
+    /// the instructions asked for have run (a step, or a pause)
+    Budget,
+}
+
+/// A CARDIAC a debugger can hold between runs: run it until it stops, step it, set breakpoints, and read and
+/// write its memory, accumulator and bug, and the cards in its reader.
+///
+/// It is the same machine as `run`, compiled separately (DEBUG): a breakpoint replaces its cell's decoding, so
+/// running to one costs nothing per instruction, and the plain machine pays nothing for any of it.
+#[derive(Clone)]
+pub struct Machine {
+    core: Core,
+    reader: Queue,
+    /// stopped with the bug where it is: a run from here runs a breakpoint's instruction rather than stopping again
+    paused: bool,
+}
+
+/// A `Machine`'s reader: the deck and the input, and in overlay mode the later tapes, each fed when asked for.
+#[derive(Clone, Default)]
+struct Queue {
+    deck: std::collections::VecDeque<i32>,
+    /// the rest of a tape being fed, ahead of the deck
+    tape: std::collections::VecDeque<i32>,
+    feeding: bool,
+    /// tape 2, 3, ...
+    later: Vec<Vec<i32>>,
+}
+
+impl Reader for Queue {
+    fn card(&mut self) -> Option<i32> {
+        if self.feeding {
+            if let Some(c) = self.tape.pop_front() {
+                return Some(c);
+            }
+            self.feeding = false;
+        }
+        self.deck.pop_front()
+    }
+
+    fn tape(&mut self, n: usize) -> bool {
+        if self.feeding && self.tape.is_empty() {
+            self.feeding = false;
+        }
+        match self.later.get(n.wrapping_sub(2)) {
+            Some(t) if n >= 2 && !self.feeding => {
+                self.tape = t.iter().copied().collect();
+                self.feeding = true;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Default for Machine {
+    fn default() -> Self {
+        Machine::new()
+    }
+}
+
+impl Machine {
+    /// A cleared CARDIAC, the bug on 00, nothing in the reader.
+    pub fn new() -> Machine {
+        Machine {
+            core: Core::cleared(),
+            reader: Queue::default(),
+            paused: false,
+        }
+    }
+
+    /// A cleared CARDIAC with `deck` in the reader (a tape, then its input) and the later tapes of a program in
+    /// phases, tape 2 first, fed as it stops for them: as `run_phases` runs it.
+    pub fn with_tapes(deck: &[i32], later: &[Vec<i32>]) -> Machine {
+        let mut m = Machine::new();
+        m.push(deck);
+        m.reader.later = later.to_vec();
+        m
+    }
+
+    /// Run until a stop, at most `budget` instructions, each card punched going to `out`.
+    pub fn run(&mut self, budget: u64, out: &mut impl Console) -> Event {
+        if budget == 0 {
+            return Event::Budget;
+        }
+        let limit = self.core.steps.saturating_add(budget);
+        if self.paused && self.core.breaks[self.core.pc] {
+            // run the breakpoint's instruction, then on
+            match self.step(out) {
+                Event::Budget => {}
+                e => return e,
+            }
+        }
+        let end = exec::<false, true>(&mut self.core, &mut self.reader, out, limit);
+        self.stopped(end)
+    }
+
+    /// Run one instruction (a breakpoint on it doesn't stop it).
+    pub fn step(&mut self, out: &mut impl Console) -> Event {
+        let at = self.core.pc;
+        self.core.dec[at] = decode(self.core.m[at]);
+        let limit = self.core.steps + 1;
+        let end = exec::<false, true>(&mut self.core, &mut self.reader, out, limit);
+        if self.core.breaks[at] {
+            self.core.dec[at] = (Op::Break, 0);
+        }
+        self.stopped(end)
+    }
+
+    fn stopped(&mut self, end: End) -> Event {
+        if self.core.pc == 100 {
+            self.core.pc = 0;
+        }
+        self.paused = true;
+        match end {
+            End::Halt => Event::Halt,
+            End::OutOfCards => Event::Input,
+            End::Limit => Event::Budget,
+            End::Break => Event::Break,
+            End::Fed(n) => Event::Tape(n),
+        }
+    }
+
+    /// Put cards in the reader, after those in it.
+    pub fn push(&mut self, cards: &[i32]) {
+        assert!(cards.iter().all(|c| (-999..=999).contains(c)), "a card holds -999..999");
+        self.reader.deck.extend(cards);
+    }
+
+    /// The next card INP will read.
+    pub fn next_card(&self) -> Option<i32> {
+        let r = &self.reader;
+        r.tape.front().filter(|_| r.feeding).or(r.deck.front()).copied()
+    }
+
+    /// Stop before the instruction in `cell` whenever the bug reaches it.
+    pub fn set_break(&mut self, cell: usize) {
+        self.core.breaks[cell] = true;
+        self.core.dec[cell] = (Op::Break, 0);
+    }
+
+    pub fn clear_break(&mut self, cell: usize) {
+        self.core.breaks[cell] = false;
+        self.core.dec[cell] = decode(self.core.m[cell]);
+    }
+
+    pub fn is_break(&self, cell: usize) -> bool {
+        self.core.breaks[cell]
+    }
+
+    pub fn memory(&self) -> &[i32; 100] {
+        &self.core.m
+    }
+
+    pub fn cell(&self, cell: usize) -> i32 {
+        self.core.m[cell]
+    }
+
+    /// Write a cell, as STO would (cell 00 is wired to 001 and keeps it).
+    pub fn set_cell(&mut self, cell: usize, word: i32) {
+        assert!((-999..=999).contains(&word), "a cell holds -999..999");
+        if cell == 0 {
+            return;
+        }
+        self.core.m[cell] = word;
+        self.core.dec[cell] = if self.core.breaks[cell] {
+            (Op::Break, 0)
+        } else {
+            decode(word)
+        };
+    }
+
+    pub fn acc(&self) -> i32 {
+        self.core.acc
+    }
+
+    pub fn set_acc(&mut self, acc: i32) {
+        assert!((-9999..=9999).contains(&acc), "the accumulator holds -9999..9999");
+        self.core.acc = acc;
+    }
+
+    /// The bug: the cell of the next instruction.
+    pub fn pc(&self) -> usize {
+        self.core.pc
+    }
+
+    pub fn set_pc(&mut self, cell: usize) {
+        assert!(cell < 100, "a cell is 00..99");
+        self.core.pc = cell;
+        self.paused = false;
+    }
+
+    /// The instructions run so far.
+    pub fn steps(&self) -> u64 {
+        self.core.steps
+    }
+
+    /// The phase running: 1, or the number of the last tape fed.
+    pub fn phase(&self) -> usize {
+        self.core.fed + 1
+    }
 }
 
 #[cfg(test)]
