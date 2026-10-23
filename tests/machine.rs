@@ -151,3 +151,29 @@ fn state_matches_a_plain_run_at_every_step() {
     let end = cardiac::run_reading::<false>(&one, &input, &later, &mut std::iter::empty(), &mut vec![], u64::MAX);
     assert_eq!((end.stop, halted), (Stop::Halt, true));
 }
+
+/// Each cell's owner is the tape that last wrote it (the loader's writes and the program's), and its write step
+/// says when: the last step's write holds the step count.
+#[test]
+fn owners_and_write_steps() {
+    // tape 1: 03 INP 10, 04 STO 11, 05 HRS 02; tape 2: 03 STO 12, 04 HRS 00
+    let one = deck(3, &[(3, 10), (4, 611), (5, 902)]);
+    let two = deck(3, &[(3, 612), (4, 900)]);
+    let mut m = Machine::with_tapes(&[one, two], &[7]);
+    let mut out = vec![];
+    assert_eq!(m.run(1000, &mut out), Event::Tape(2));
+    assert_eq!(
+        (m.owners()[3], m.owners()[10], m.owners()[11], m.owners()[12]),
+        (1, 1, 1, 0)
+    );
+    assert_eq!(m.run(1000, &mut out), Event::Halt);
+    // tape 2's loader rewrote 03 and 04, and its program wrote 12
+    assert_eq!((m.owners()[3], m.owners()[10], m.owners()[12]), (2, 1, 2));
+    let last = m.written_at().iter().position(|&s| s == m.steps() - 1).unwrap();
+    assert_eq!(last, 12);
+    // a cell written by hand is the running tape's, and a direct load tape 1's
+    m.set_cell(50, 5);
+    let mut fresh = Machine::new();
+    fresh.load_cells(&[(20, 1)]);
+    assert_eq!((m.owners()[50], fresh.owners()[20], fresh.owners()[21]), (2, 1, 0));
+}

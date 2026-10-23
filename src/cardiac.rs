@@ -333,6 +333,9 @@ struct Core {
     /// the phase loaded, less one
     fed: usize,
     breaks: [bool; 100],
+    /// (DEBUG) the tape that last wrote each cell (1, 2, ...; 0 if none has), and the step it wrote it at
+    owner: [u8; 100],
+    wrote_at: [u64; 100],
 }
 
 impl Core {
@@ -352,6 +355,8 @@ impl Core {
             trail: [0; 3],
             fed: 0,
             breaks: [false; 100],
+            owner: [0; 100],
+            wrote_at: [0; 100],
         }
     }
 }
@@ -456,11 +461,17 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
     let m = &mut s.m;
     let dec = &mut s.dec;
     let breaks = &s.breaks;
-    // put a breakpoint back over a cell just written
+    let owner = &mut s.owner;
+    let wrote_at = &mut s.wrote_at;
+    // a cell just written: put its breakpoint back, and note which tape wrote it, and when
     macro_rules! rebreak {
         ($a:expr) => {
-            if DEBUG && breaks[$a] {
-                dec[$a] = (Op::Break, 0);
+            if DEBUG {
+                if breaks[$a] {
+                    dec[$a] = (Op::Break, 0);
+                }
+                owner[$a] = (s.fed + 1) as u8;
+                wrote_at[$a] = steps;
             }
         };
     }
@@ -656,7 +667,7 @@ impl Machine {
                 e => return e,
             }
         }
-        let end = exec::<false, true>(&mut self.core, &mut self.reader, out, limit);
+        let end = exec::<true, true>(&mut self.core, &mut self.reader, out, limit);
         self.stopped(end)
     }
 
@@ -665,7 +676,7 @@ impl Machine {
         let at = self.core.pc;
         self.core.dec[at] = decode(self.core.m[at]);
         let limit = self.core.steps + 1;
-        let end = exec::<false, true>(&mut self.core, &mut self.reader, out, limit);
+        let end = exec::<true, true>(&mut self.core, &mut self.reader, out, limit);
         if self.core.breaks[at] {
             self.core.dec[at] = (Op::Break, 0);
         }
@@ -684,6 +695,21 @@ impl Machine {
             End::Break => Event::Break,
             End::Fed(n) => Event::Tape(n),
         }
+    }
+
+    /// The tapes of a program in phases, tape 1 first, each put in the reader when the program stops for it (tape 1
+    /// is not put in the reader now: `push` it, and the input after it).
+    pub fn set_tapes(&mut self, tapes: Vec<Vec<i32>>) {
+        assert!(
+            tapes.iter().flatten().all(|c| (-999..=999).contains(c)),
+            "a card holds -999..999"
+        );
+        self.reader.tapes = tapes;
+    }
+
+    /// The cells of the last three instructions run, the last last.
+    pub fn trail(&self) -> [usize; 3] {
+        self.core.trail
     }
 
     /// Put cards in the reader, after those in it.
@@ -725,12 +751,14 @@ impl Machine {
         self.core.m[cell]
     }
 
-    /// Write a cell, as STO would (cell 00 is wired to 001 and keeps it).
+    /// Write a cell, as STO would (cell 00 is wired to 001 and keeps it), in the name of the tape running.
     pub fn set_cell(&mut self, cell: usize, word: i32) {
         assert!((-999..=999).contains(&word), "a cell holds -999..999");
         if cell == 0 {
             return;
         }
+        self.core.owner[cell] = (self.core.fed + 1) as u8;
+        self.core.wrote_at[cell] = self.core.steps;
         self.core.m[cell] = word;
         self.core.dec[cell] = if self.core.breaks[cell] {
             (Op::Break, 0)
@@ -757,6 +785,25 @@ impl Machine {
         assert!(cell < 100, "a cell is 00..99");
         self.core.pc = cell;
         self.paused = false;
+    }
+
+    /// Write a program straight into memory (the manual's short cut; a listing): each cell as `set_cell` does,
+    /// tape 1's.
+    pub fn load_cells(&mut self, cells: &[(usize, i32)]) {
+        for &(a, w) in cells {
+            self.set_cell(a, w);
+        }
+    }
+
+    /// The tape that last wrote each cell: 1, 2, ..., or 0 for a cell nothing has written. (A cell a program
+    /// writes is its tape's: the one loaded last.)
+    pub fn owners(&self) -> &[u8; 100] {
+        &self.core.owner
+    }
+
+    /// The step each cell was last written at (0 for none): the cells the last step wrote hold `steps()`.
+    pub fn written_at(&self) -> &[u64; 100] {
+        &self.core.wrote_at
     }
 
     /// The instructions run so far.
