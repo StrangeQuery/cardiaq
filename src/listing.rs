@@ -45,6 +45,8 @@ pub struct Read {
     /// the cells whose contents the listing leaves to the reader (`8__`, `N(start)`): each cell, and what stands
     /// in for its contents
     pub unwritten: Vec<(usize, String)>,
+    /// where the program starts, when the listing says: its first instruction, in a listing that names its opcodes
+    pub start: Option<usize>,
 }
 
 const OPS: [&str; 10] = ["INP", "CLA", "ADD", "TAC", "SFT", "OUT", "STO", "SUB", "JMP", "HRS"];
@@ -171,6 +173,104 @@ fn parse_deck(text: &str) -> Result<Read, String> {
         listing: Listing::Deck(d),
         warnings,
         unwritten: vec![],
+        start: None,
+    })
+}
+
+/// What a line of a memory listing says about its cell, past the address.
+struct Cell {
+    contents: Option<i32>,
+    unwritten: Option<String>,
+    label: Option<String>,
+    instruction: Option<(usize, String)>,
+}
+
+/// An opcode, 0-9, or 10 for DATA.
+fn op(t: &str) -> Option<usize> {
+    OPS.iter().position(|&o| o == t).or((t == "DATA").then_some(10))
+}
+
+/// The contents column: a word, nothing, or something that stands for a word (`8__`, `N(start)`).
+fn contents(c: &str) -> Result<(Option<i32>, Option<String>), String> {
+    if c.is_empty() {
+        return Ok((None, None));
+    }
+    if let Some(w) = word(c) {
+        return Ok((Some(w), None));
+    }
+    if c.bytes().any(|b| b.is_ascii_digit()) && c.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-')) {
+        return Err(format!("{c} is not a word (-999 to 999)"));
+    }
+    Ok((None, Some(c.to_string())))
+}
+
+/// A line in Stuart's columns, separated by tabs, an empty column where a cell has no label (or no contents):
+/// `Address, Contents, Label, Opcode, Operand, Comment`. None when its columns aren't those.
+fn columns(raw: &str) -> Option<Cell> {
+    if !raw.contains('\t') {
+        return None;
+    }
+    let c: Vec<&str> = raw.split('\t').map(|c| c.trim().trim_matches('|').trim()).collect();
+    let col = |i: usize| c.get(i).copied().unwrap_or("");
+    let label = col(2).trim_end_matches(':');
+    if address(col(0)).is_none()
+        || !(label.is_empty() || is_label(label))
+        || !(col(3).is_empty() || op(col(3)).is_some())
+    {
+        return None;
+    }
+    let (contents, unwritten) = contents(col(1)).ok()?;
+    Some(Cell {
+        contents,
+        unwritten,
+        label: (!label.is_empty()).then(|| label.to_string()),
+        // HRS with no operand is HRS 00
+        instruction: op(col(3)).map(|o| (o, if col(4).is_empty() { "0" } else { col(4) }.to_string())),
+    })
+}
+
+/// A line read word by word: the contents if the second word is one, then a label, an opcode and its operand,
+/// each optional, and the rest comment.
+fn guessed(t: &[&str]) -> Result<Cell, String> {
+    let mut i = 1;
+    let (contents, mut unwritten) = match t.get(1) {
+        Some(c) => match contents(c)? {
+            (Some(w), _) => {
+                i = 2;
+                (Some(w), None)
+            }
+            // not a word: perhaps a label or an opcode, else it stands for the contents
+            _ => (None, None),
+        },
+        None => (None, None),
+    };
+    let mut label = None;
+    let mut instruction = None;
+    match (t.get(i), t.get(i + 1)) {
+        // (after the contents, `word:` is prose: `data: CLA 97: an instruction the program changes`)
+        (Some(&l), Some(&o))
+            if is_label(l.trim_end_matches(':')) && op(o).is_some() && !(contents.is_some() && l.ends_with(':')) =>
+        {
+            label = Some(l.trim_end_matches(':').to_string());
+            instruction = t.get(i + 2).map(|x| (op(o).unwrap(), x.to_string()));
+            if instruction.is_none() && contents.is_none() {
+                return Err(format!("{o} with no operand"));
+            }
+        }
+        (Some(&o), x) if op(o).is_some() => {
+            instruction = x.map(|x| (op(o).unwrap(), x.to_string()));
+            if instruction.is_none() && contents.is_none() {
+                return Err(format!("{o} with no operand"));
+            }
+        }
+        (Some(&c), _) if contents.is_none() => unwritten = Some(c.to_string()),
+        _ => {}
+    }
+    Ok(Cell {
+        contents,
+        unwritten,
+        label,
+        instruction,
     })
 }
 
@@ -178,9 +278,22 @@ fn parse_memory(text: &str) -> Result<Read, String> {
     let mut lines: Vec<Line> = vec![];
     let mut labels: HashMap<String, usize> = HashMap::new();
     let mut warnings = vec![];
+    // a label on a line of its own (`S_Loop:`) names the next cell listed
+    let mut pending: Option<(usize, String)> = None;
+    let define = |l: &str, at: usize, n: usize, labels: &mut HashMap<String, usize>| {
+        if labels.insert(l.to_string(), at).is_some() {
+            return Err(format!("line {}: label {l} defined twice", n + 1));
+        }
+        Ok(())
+    };
     for (n, raw) in text.lines().enumerate() {
         let t = tokens(raw);
         let Some(at) = t.first().and_then(|f| address(f)) else {
+            if let [l] = t.as_slice() {
+                if let Some(l) = l.strip_suffix(':').filter(|l| is_label(l)) {
+                    pending = Some((n, l.to_string()));
+                }
+            }
             continue;
         };
         // a table of pairs, two or more a line: every token a number
@@ -199,48 +312,22 @@ fn parse_memory(text: &str) -> Result<Read, String> {
             }
             continue;
         }
-        let mut i = 1;
-        let mut contents = None;
-        let mut unwritten = None;
-        if let Some(&c) = t.get(i) {
-            if let Some(w) = word(c) {
-                contents = Some(w);
-                i += 1;
-            } else if c.bytes().any(|b| b.is_ascii_digit())
-                && c.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-'))
-            {
-                return Err(format!("line {}: cell {at:02}: {c} is not a word (-999 to 999)", n + 1));
-            }
+        let cell = columns(raw).map_or_else(|| guessed(&t), Ok);
+        let Cell {
+            contents,
+            unwritten,
+            label,
+            instruction,
+        } = cell.map_err(|e| format!("line {}: cell {at:02}: {e}", n + 1))?;
+        if let Some((ln, l)) = pending.take() {
+            define(&l, at, ln, &mut labels)?;
         }
-        // then a label, an opcode and its operand, each optional
-        let op = |t: &str| OPS.iter().position(|&o| o == t).or((t == "DATA").then_some(10));
-        let mut label = None;
-        let mut instruction = None;
-        match (t.get(i), t.get(i + 1)) {
-            (Some(&l), Some(&o)) if is_label(l.trim_end_matches(':')) && op(o).is_some() => {
-                label = Some(l.trim_end_matches(':'));
-                instruction = t.get(i + 2).map(|x| (op(o).unwrap(), x.to_string()));
-                if instruction.is_none() && contents.is_none() {
-                    return Err(format!("line {}: cell {at:02}: {o} with no operand", n + 1));
-                }
-            }
-            (Some(&o), x) if op(o).is_some() => {
-                instruction = x.map(|x| (op(o).unwrap(), x.to_string()));
-                if instruction.is_none() && contents.is_none() {
-                    return Err(format!("line {}: cell {at:02}: {o} with no operand", n + 1));
-                }
-            }
-            (Some(&c), _) if contents.is_none() => unwritten = Some(c.to_string()),
-            _ => {}
+        if let Some(l) = &label {
+            define(l, at, n, &mut labels)?;
         }
         if contents.is_none() && instruction.is_none() && unwritten.is_none() {
-            // an address alone: nothing to load
+            // an address alone, or with a label only: nothing to load
             continue;
-        }
-        if let Some(l) = label {
-            if labels.insert(l.to_string(), at).is_some() {
-                return Err(format!("line {}: label {l} defined twice", n + 1));
-            }
         }
         lines.push(Line {
             n,
@@ -250,6 +337,12 @@ fn parse_memory(text: &str) -> Result<Read, String> {
             instruction,
         });
     }
+    // where it starts: the first instruction, when the listing names its opcodes (Stuart's six columns: the data
+    // cells come first)
+    let start = lines
+        .iter()
+        .find(|l| matches!(l.instruction, Some((o, _)) if o < 10))
+        .map(|l| l.at);
     let operand = |x: &str| -> Option<i32> {
         if let Some(&a) = labels.get(x) {
             return Some(a as i32);
@@ -313,6 +406,7 @@ fn parse_memory(text: &str) -> Result<Read, String> {
         listing: Listing::Memory(cells),
         warnings,
         unwritten,
+        start,
     })
 }
 
@@ -388,6 +482,29 @@ mod tests {
             vec![(11, 134), (12, 534), (34, 7)]
         );
         assert!(parse("11 CLA nowhere\n").is_err());
+    }
+
+    #[test]
+    fn stuarts_tab_columns_labels_alone_and_the_start() {
+        // data first, a label with no contents (a variable), a label on a line of its own, HRS with no operand
+        let r = parse(
+            "05\t600\tstorer\tDATA\t600\n06\t\tn\t\t\tthe count\n\n\t\ttop:\n10\t\t\tCLA\tn\tload it\n11\t\t\tJMP\ttop\n12\t900\t\tHRS\n",
+        )
+        .unwrap();
+        assert_eq!(
+            r.listing,
+            Listing::Memory(vec![(5, 600), (10, 106), (11, 810), (12, 900)])
+        );
+        assert_eq!((r.start, r.warnings.len(), r.unwritten.len()), (Some(10), 0, 0));
+        // a listing with no opcodes says nothing of where it starts
+        assert_eq!(parse("17 034\n18 035\n").unwrap().start, None);
+    }
+
+    #[test]
+    fn prose_after_the_contents_is_prose() {
+        // `data:` in a note is not a label, though an opcode follows it
+        let c = cells(" 86     197      data: CLA 97: an instruction the program copies\n 88  097  data: INP 97\n");
+        assert_eq!(c, vec![(86, 197), (88, 97)]);
     }
 
     #[test]

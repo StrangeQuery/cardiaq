@@ -26,11 +26,11 @@ Usage:
   heartburn run LISTING... [--start NN] [-- INPUT...]
       Run a listing as the 1968 manual or Brian Stuart's page prints it: the first two numbers on a line are the
       address and the contents, the rest is comment (Stuart's six columns assemble a cell whose contents are
-      missing). Its cells are written straight into memory and it starts at NN, or at the first cell listed. More
-      listings load over the first, as the manual loads a program and then its tables. A deck listed card by card
+      missing). Its cells are written straight into memory and it starts at NN, or at its first instruction (the
+      first cell with an opcode other than DATA), or else at the first cell listed. More listings load over the first, as the manual loads a program and then its tables. A deck listed card by card
       (INPUT CARD  CONTENTS) is read in by its loader; at its BLANK card the operator starts it at NN.
   heartburn tape LISTING... [--start NN] [-o OUT]
-      A listing to a tape that loads itself and starts at NN (or the first cell listed): a plain deck, FILE.tape,
+      A listing to a tape that loads itself and starts at NN (or where run would start it): a plain deck, FILE.tape,
       or OUT (NAME.2.tape for a program's tape 2).
   heartburn cardiasm FILE.cardiasm
       Jason Whittington's CARDIASM: assemble it to a deck, FILE.cardimg, beside it.
@@ -107,18 +107,23 @@ fn run(file: &str, input: Option<Vec<i32>>) {
     report(why, steps)
 }
 
-/// Read listings, the later loaded over the earlier, their warnings to standard error. A deck stands alone.
-fn read_listings(files: &[String]) -> Listing {
+/// Read listings, the later loaded over the earlier, their warnings to standard error. A deck stands alone. With
+/// them, where the program starts, if the first listing says (its first instruction).
+fn read_listings(files: &[String]) -> (Listing, Option<usize>) {
     let mut cells: Vec<(usize, i32)> = vec![];
     let mut unwritten: Vec<(String, usize, String)> = vec![];
     let mut deck = None;
-    for file in files {
+    let mut start = None;
+    for (i, file) in files.iter().enumerate() {
         let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {e}")));
         let read = listing::parse(&text).unwrap_or_else(|e| die(format!("{file}: {e}")));
         for w in &read.warnings {
             eprintln!("warning: {file}: {w}");
         }
         unwritten.extend(read.unwritten.into_iter().map(|(a, what)| (file.clone(), a, what)));
+        if i == 0 {
+            start = read.start;
+        }
         match read.listing {
             Listing::Memory(c) => {
                 for (a, v) in c {
@@ -139,8 +144,8 @@ fn read_listings(files: &[String]) -> Listing {
     }
     match deck {
         Some(_) if files.len() > 1 => die("a deck listed card by card is read in alone, not with other listings"),
-        Some(d) => Listing::Deck(d),
-        None => Listing::Memory(cells),
+        Some(d) => (Listing::Deck(d), None),
+        None => (Listing::Memory(cells), start),
     }
 }
 
@@ -152,9 +157,10 @@ fn run_listing(files: &[String], start: Option<usize>, input: Option<Vec<i32>>) 
         None => (&[], &mut stdin),
     };
     let mut more = more;
-    match read_listings(files) {
+    let (listing, first) = read_listings(files);
+    match listing {
         Listing::Memory(cells) => {
-            let start = start.unwrap_or(cells[0].0);
+            let start = start.or(first).unwrap_or(cells[0].0);
             let end = cardiac::run_from(
                 &listing::memory(&cells),
                 start,
@@ -188,10 +194,10 @@ fn run_listing(files: &[String], start: Option<usize>, input: Option<Vec<i32>>) 
 }
 
 fn tape(files: &[String], start: Option<usize>, output: Option<&str>) {
-    let cards = match read_listings(files) {
-        Listing::Memory(cells) => {
-            listing::deck(start.unwrap_or(cells[0].0), &cells).unwrap_or_else(|e| die(format!("{}: {e}", files[0])))
-        }
+    let (read, first) = read_listings(files);
+    let cards = match read {
+        Listing::Memory(cells) => listing::deck(start.or(first).unwrap_or(cells[0].0), &cells)
+            .unwrap_or_else(|e| die(format!("{}: {e}", files[0]))),
         Listing::Deck(d) => {
             let mut c = d.cards;
             match (d.blank, start) {
