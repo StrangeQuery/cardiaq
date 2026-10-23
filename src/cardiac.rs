@@ -614,8 +614,10 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
             }
             Op::Sub => acc = wrap4(acc - m[a]),
             Op::Jmp => {
-                m[99] = 800 + pc as i32;
-                dec[99] = (Op::Jmp, pc as u8);
+                // the way back: the next cell, which after 99 is 00 (#7)
+                let back = if pc == 100 { 0 } else { pc };
+                m[99] = 800 + back as i32;
+                dec[99] = (Op::Jmp, back as u8);
                 rebreak!(99);
                 pc = a;
             }
@@ -954,6 +956,16 @@ mod tests {
         let end = run_traced(&deck, &[], &[], &mut traced, 1000);
         assert_eq!((stop, out, traced), (Stop::Halt, vec![42], vec![42]));
         assert_eq!((end.steps, end.trail), (steps, [99, 0, 1]));
+    }
+
+    #[test]
+    fn a_jmp_in_99_leaves_the_way_back_to_00() {
+        // 10 CLA 20, 11 STO 99, 12 JMP 99, 13 OUT 99, 14 HRS; 20 holds JMP 13: the JMP in 99 jumps to 13 and leaves
+        // 800 in 99, JMP 00, the cell after 99 (#7)
+        let deck = [2, 800, 10, 120, 11, 699, 12, 899, 13, 599, 14, 900, 20, 813, 2, 810];
+        let mut out = vec![];
+        let (stop, _) = run(&[&deck], &mut out, 1000);
+        assert_eq!((stop, out), (Stop::Halt, vec![800]));
     }
 
     #[test]
