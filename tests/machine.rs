@@ -177,3 +177,28 @@ fn owners_and_write_steps() {
     fresh.load_cells(&[(20, 1)]);
     assert_eq!((m.owners()[50], fresh.owners()[20], fresh.owners()[21]), (2, 1, 0));
 }
+
+/// (The `marks` feature, as heartburn.wasm is built) The cells run, the cells used as data, and the last
+/// instruction; a breakpoint or an INP waiting for a card marks nothing.
+#[cfg(feature = "marks")]
+#[test]
+fn marks_for_a_page() {
+    // 10 CLA 20, 11 JMP 13, 12 HRS, 13 INP 21, 14 HRS 00
+    let d = deck(10, &[(10, 120), (11, 813), (12, 900), (13, 21), (14, 900), (20, -7)]);
+    let mut m = Machine::with_tapes(&[d], &[]);
+    let mut out = vec![];
+    m.clear_marks();
+    m.set_break(11);
+    assert_eq!(m.run(1000, &mut out), Event::Break);
+    // the loader ran 00-02 (its JMPs leave the way back in 99); CLA 20 ran; the breakpoint's cell hasn't
+    assert!(m.ran()[1] && m.used()[99] && m.ran()[10] && !m.ran()[11] && m.used()[20]);
+    assert_eq!(m.last(), (10, 120, 0));
+    m.clear_marks();
+    assert_eq!(m.run(1000, &mut out), Event::Input);
+    assert!(m.ran()[11] && m.used()[99] && !m.ran()[13] && !m.used()[21]);
+    assert_eq!(m.last(), (11, 813, -7));
+    m.push(&[5]);
+    assert_eq!(m.run(1000, &mut out), Event::Halt);
+    assert!(m.ran()[13] && m.used()[21] && m.ran()[14] && !m.ran()[12]);
+    assert_eq!((m.last(), m.cell(21)), ((14, 900, -7), 5));
+}

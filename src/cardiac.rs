@@ -299,7 +299,7 @@ fn run_feeding<'a, const TRACE: bool>(
         overlay,
         next,
     };
-    let stop = match exec::<TRACE, false>(&mut s, &mut reader, out, limit) {
+    let stop = match exec::<TRACE, false>(&mut s, &mut Marks::default(), &mut reader, out, limit) {
         End::Halt => Stop::Halt,
         End::OutOfCards => Stop::OutOfCards,
         _ => Stop::Limit,
@@ -336,6 +336,77 @@ struct Core {
     /// (DEBUG) the tape that last wrote each cell (1, 2, ...; 0 if none has), and the step it wrote it at
     owner: [u8; 100],
     wrote_at: [u64; 100],
+}
+
+/// (DEBUG, with the `marks` feature, for a page that draws the machine) The cells run, and the cells an instruction
+/// used as data (its operand, or 99 for JMP), since the marks were last cleared; and the last instruction run: its
+/// cell, its word, and the accumulator before it. Without the feature, as native HEARTBURN is built, it is empty and
+/// costs nothing, not even in the layout of the plain machine's code.
+#[derive(Clone, Default)]
+struct Marks {
+    #[cfg(feature = "marks")]
+    m: MarksKept,
+}
+
+#[cfg(feature = "marks")]
+#[derive(Clone)]
+struct MarksKept {
+    ran: [bool; 100],
+    used: [bool; 100],
+    last: (usize, i32, i32),
+}
+
+#[cfg(feature = "marks")]
+impl Default for MarksKept {
+    fn default() -> Self {
+        MarksKept {
+            ran: [false; 100],
+            used: [false; 100],
+            last: (0, 0, 0),
+        }
+    }
+}
+
+/// What `Marks::note` changed, for `Marks::undo` when the instruction turns out not to run.
+#[cfg(feature = "marks")]
+type Undo = (bool, usize, bool, (usize, i32, i32));
+#[cfg(not(feature = "marks"))]
+type Undo = ();
+
+impl Marks {
+    /// The instruction in `here`, `op` with address `a`, about to run.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn note(&mut self, here: usize, op: Op, a: usize, word: i32, acc: i32) -> Undo {
+        #[cfg(feature = "marks")]
+        {
+            let k = &mut self.m;
+            let data = match op {
+                Op::Inp | Op::Cla | Op::Add | Op::Out | Op::Sto | Op::Sub => a,
+                Op::Jmp => 99,
+                _ => 0,
+            };
+            let undo = (k.ran[here], data, k.used[data], k.last);
+            k.ran[here] = true;
+            if data != 0 {
+                k.used[data] = true;
+            }
+            k.last = (here, word, acc);
+            undo
+        }
+    }
+
+    /// It didn't run after all: a breakpoint, or an INP waiting for a card.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn undo(&mut self, here: usize, u: Undo) {
+        #[cfg(feature = "marks")]
+        {
+            let k = &mut self.m;
+            (k.ran[here], k.last) = (u.0, u.3);
+            k.used[u.1] = u.2;
+        }
+    }
 }
 
 impl Core {
@@ -453,6 +524,7 @@ enum End {
 #[inline(always)]
 fn exec<const TRACE: bool, const DEBUG: bool>(
     s: &mut Core,
+    marks: &mut Marks,
     r: &mut impl Reader,
     out: &mut impl Console,
     limit: u64,
@@ -463,6 +535,7 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
     let breaks = &s.breaks;
     let owner = &mut s.owner;
     let wrote_at = &mut s.wrote_at;
+
     // a cell just written: put its breakpoint back, and note which tape wrote it, and when
     macro_rules! rebreak {
         ($a:expr) => {
@@ -494,6 +567,13 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
         let a = a as usize;
         let here = pc;
         pc += 1;
+        // (DEBUG) the cell run, the cell it uses as data, and the instruction; and what a stop before it puts back
+        #[allow(clippy::let_unit_value)]
+        let undo = if DEBUG && here < 100 {
+            marks.note(here, op, a, m[here], acc)
+        } else {
+            Undo::default()
+        };
         match op {
             Op::Inp => {
                 let Some(c) = r.card() else {
@@ -502,6 +582,7 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
                         steps -= 1;
                         trail = before;
                         pc = here;
+                        marks.undo(here, undo);
                     }
                     end!(End::OutOfCards)
                 };
@@ -566,6 +647,7 @@ fn exec<const TRACE: bool, const DEBUG: bool>(
                 steps -= 1;
                 trail = before;
                 pc = here;
+                marks.undo(here, undo);
                 end!(End::Break)
             }
         }
@@ -596,6 +678,7 @@ pub enum Event {
 #[derive(Clone)]
 pub struct Machine {
     core: Core,
+    marks: Marks,
     reader: Queue,
     /// stopped with the bug where it is: a run from here runs a breakpoint's instruction rather than stopping again
     paused: bool,
@@ -637,6 +720,7 @@ impl Machine {
     pub fn new() -> Machine {
         Machine {
             core: Core::cleared(),
+            marks: Marks::default(),
             reader: Queue::default(),
             paused: false,
         }
@@ -667,7 +751,7 @@ impl Machine {
                 e => return e,
             }
         }
-        let end = exec::<true, true>(&mut self.core, &mut self.reader, out, limit);
+        let end = exec::<true, true>(&mut self.core, &mut self.marks, &mut self.reader, out, limit);
         self.stopped(end)
     }
 
@@ -676,7 +760,7 @@ impl Machine {
         let at = self.core.pc;
         self.core.dec[at] = decode(self.core.m[at]);
         let limit = self.core.steps + 1;
-        let end = exec::<true, true>(&mut self.core, &mut self.reader, out, limit);
+        let end = exec::<true, true>(&mut self.core, &mut self.marks, &mut self.reader, out, limit);
         if self.core.breaks[at] {
             self.core.dec[at] = (Op::Break, 0);
         }
@@ -804,6 +888,32 @@ impl Machine {
     /// The step each cell was last written at (0 for none): the cells the last step wrote hold `steps()`.
     pub fn written_at(&self) -> &[u64; 100] {
         &self.core.wrote_at
+    }
+
+    /// (With the `marks` feature) The cells run since the marks were last cleared (`clear_marks`).
+    #[cfg(feature = "marks")]
+    pub fn ran(&self) -> &[bool; 100] {
+        &self.marks.m.ran
+    }
+
+    /// (With the `marks` feature) The cells an instruction used as data since the marks were last cleared: CLA,
+    /// ADD, SUB, OUT, STO and INP's operands, and cell 99 for JMP.
+    #[cfg(feature = "marks")]
+    pub fn used(&self) -> &[bool; 100] {
+        &self.marks.m.used
+    }
+
+    #[cfg(feature = "marks")]
+    pub fn clear_marks(&mut self) {
+        self.marks.m.ran = [false; 100];
+        self.marks.m.used = [false; 100];
+    }
+
+    /// (With the `marks` feature) The last instruction run: its cell, its word then, and the accumulator before it
+    /// ran.
+    #[cfg(feature = "marks")]
+    pub fn last(&self) -> (usize, i32, i32) {
+        self.marks.m.last
     }
 
     /// The instructions run so far.

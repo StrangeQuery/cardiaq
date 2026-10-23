@@ -43,9 +43,12 @@ function runSession(wasm, script) {
   const trail = Array.from(new Int32Array(mem(), x.hb_trail(), 3));
   const nr = x.hb_reader();
   const reader = Array.from(new Int32Array(mem(), x.hb_buffer_ptr(), nr));
+  if (x.hb_reader_len() !== nr) throw new Error('hb_reader_len disagrees with hb_reader');
+  const ran = Array.from(new Uint8Array(mem(), x.hb_ran(), 100)), used = Array.from(new Uint8Array(mem(), x.hb_used(), 100));
   return [
     `events: ${events.join(' ')}`, `punched: ${punched.join(' ')}`, `steps: ${x.hb_steps()}`, `acc: ${x.hb_acc()}`,
     `pc: ${x.hb_pc()}`, `phase: ${x.hb_phase()}`, `memory: ${cells.join(' ')}`, `owners: ${owners.join(' ')}`,
     `written: ${written.join(' ')}`, `trail: ${trail.join(' ')}`, `reader: ${reader.join(' ')}`,
+    `ran: ${ran.join(' ')}`, `used: ${used.join(' ')}`, `last: ${x.hb_last_cell()} ${x.hb_last_word()} ${x.hb_last_acc()}`,
   ].join('\n') + '\n';
 }

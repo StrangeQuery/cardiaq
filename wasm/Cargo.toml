@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-heartburn = { path = ".." }
+heartburn = { path = "..", features = ["marks"] }
 
 [profile.release]
 opt-level = 3

@@ -76,4 +76,8 @@ fn main() {
     println!("written: {}", join(m.written_at()));
     println!("trail: {}", join(m.trail()));
     println!("reader: {}", join(m.cards()));
+    println!("ran: {}", join(m.ran().iter().map(|&b| b as u8)));
+    println!("used: {}", join(m.used().iter().map(|&b| b as u8)));
+    let (cell, word, acc) = m.last();
+    println!("last: {cell} {word} {acc}");
 }

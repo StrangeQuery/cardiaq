@@ -253,3 +253,43 @@ pub extern "C" fn hb_punched() -> *const i32 {
 pub extern "C" fn hb_take_punched() {
     with(|s| s.punched.clear())
 }
+
+/// How many cards are in the reader.
+#[no_mangle]
+pub extern "C" fn hb_reader_len() -> u32 {
+    with(|s| s.machine.cards().count() as u32)
+}
+
+/// The cells run since the marks were cleared, 100 bytes (1 or 0).
+#[no_mangle]
+pub extern "C" fn hb_ran() -> *const bool {
+    with(|s| s.machine.ran().as_ptr())
+}
+
+/// The cells an instruction used as data since the marks were cleared, 100 bytes: CLA, ADD, SUB, OUT, STO and
+/// INP's operands, and 99 for JMP.
+#[no_mangle]
+pub extern "C" fn hb_used() -> *const bool {
+    with(|s| s.machine.used().as_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn hb_clear_marks() {
+    with(|s| s.machine.clear_marks())
+}
+
+/// The last instruction run: its cell, its word then, and the accumulator before it ran.
+#[no_mangle]
+pub extern "C" fn hb_last_cell() -> u32 {
+    with(|s| s.machine.last().0 as u32)
+}
+
+#[no_mangle]
+pub extern "C" fn hb_last_word() -> i32 {
+    with(|s| s.machine.last().1)
+}
+
+#[no_mangle]
+pub extern "C" fn hb_last_acc() -> i32 {
+    with(|s| s.machine.last().2)
+}
