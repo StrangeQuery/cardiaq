@@ -16,12 +16,13 @@ fn usage() -> &'static str {
 heartburn: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast
 
 Usage:
-  heartburn run FILE.tape [-- INPUT...]
-  heartburn run FILE.cardimg [-- INPUT...]
-      Run a tape (a program in phases is fed its tapes as it asks for them) or a deck. Each card it punches is
-      printed on a line of its own as it is punched. The input is the numbers after --, or else standard input,
-      each card read when an INP asks for it. A resource slot on the tape is filled from resources/NAME beside it.
-      How it stopped, and after how many instructions, goes to standard error.
+  heartburn run NAME.tape [-- INPUT...]
+  heartburn run NAME.cardimg [-- INPUT...]
+      Run a tape or a deck: plain cards, one a line. A program in phases is fed its tapes as it asks for them:
+      when it stops with the bug on n (HRS n), NAME.n.tape beside it goes in the reader and it starts again at 00.
+      Each card it punches is printed on a line of its own as it is punched. The input is the numbers after --, or
+      else standard input, each card read when an INP asks for it. A resource slot (NAME.tape.meta) is filled from
+      resources/NAME beside it. How it stopped, and after how many instructions, goes to standard error.
   heartburn run LISTING... [--start NN] [-- INPUT...]
       Run a listing as the 1968 manual or Brian Stuart's page prints it: the first two numbers on a line are the
       address and the contents, the rest is comment (Stuart's six columns assemble a cell whose contents are
@@ -29,7 +30,8 @@ Usage:
       listings load over the first, as the manual loads a program and then its tables. A deck listed card by card
       (INPUT CARD  CONTENTS) is read in by its loader; at its BLANK card the operator starts it at NN.
   heartburn tape LISTING... [--start NN] [-o OUT]
-      A listing to a tape that loads itself and starts at NN (or the first cell listed): FILE.tape, or OUT.
+      A listing to a tape that loads itself and starts at NN (or the first cell listed): a plain deck, FILE.tape,
+      or OUT (NAME.2.tape for a program's tape 2).
   heartburn cardiasm FILE.cardiasm
       Jason Whittington's CARDIASM: assemble it to a deck, FILE.cardimg, beside it.
   heartburn bench
@@ -89,8 +91,7 @@ fn report(why: Stop, steps: u64) {
 }
 
 fn run(file: &str, input: Option<Vec<i32>>) {
-    let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {e}")));
-    let mut tape = Tape::parse(&text).unwrap_or_else(|e| die(format!("{file}: {e}")));
+    let mut tape = Tape::load(Path::new(file)).unwrap_or_else(|e| die(e));
     let dir = Path::new(file)
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -209,17 +210,7 @@ fn tape(files: &[String], start: Option<usize>, output: Option<&str>) {
         .map(Path::new)
         .map(Path::to_path_buf)
         .unwrap_or_else(|| Path::new(&files[0]).with_extension("tape"));
-    let source = Path::new(&files[0])
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(&files[0]);
-    let name = out.file_name().and_then(|s| s.to_str()).unwrap_or("tape");
-    // TODO(#3): a plain deck, numbers only, once the per-phase tape format is in
-    std::fs::write(
-        &out,
-        Tape::one(cards.clone()).text(&format!("{name}: from {source} by heartburn tape")),
-    )
-    .unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
+    std::fs::write(&out, Tape::deck_text(&cards)).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
     eprintln!("{}: {} cards", out.display(), cards.len());
 }
 

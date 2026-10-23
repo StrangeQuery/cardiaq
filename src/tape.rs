@@ -4,20 +4,24 @@
 //! program, then the pair 002 8xx that starts it (see `listing::deck`). The program's input comes after it.
 //!
 //! A program in phases (`overlay()`) has a tape for each phase. Each phase ends with HRS n, a stop with the bug on
-//! the tape to load next (the overlay convention), and that tape goes in the reader then, ahead of whatever input
-//! is left, the loader started at 00 (`cardiac::run_phases`). So the input is one stream, read in order whichever
-//! phase reads it, as it is natively.
+//! the tape to load next (the overlay convention; on 00 it is done), and a fresh copy of tape n goes in the reader
+//! then, ahead of whatever is left, the loader started at 00 (`cardiac::run_phases`): any tape, in any order, as
+//! often as asked. So the input is one stream, read in order whichever phase reads it, as it is natively.
 //!
 //! A resource (`load_resource("NAME")`) is a slot on the first phase's tape: cells whose value cards the loader
 //! fills with the resource's values, when the tape is built or loaded (`Tape::bind`). A tape whose slots are all
 //! bound is complete; one with a slot still empty doesn't run.
 //!
-//! The file is plain text, one card per line, top to bottom, as a signed number. Lines starting with `#` are
-//! comments, except two:
-//!   `# phase N`                         the cards after it are phase N's tape (N = 2, 3, ...)
-//!   `# resource NAME ADDRESS LENGTH`    a resource's slot, those cells of the first phase's tape, still empty;
-//!                                       `bound` after it when the cards hold the resource's values
-use std::path::Path;
+//! On disk each tape is a plain deck that any CARDIAC player loads: one card per line, top to bottom, a signed
+//! number, nothing else. `NAME.tape` is tape 1, `NAME.2.tape` tape 2, and so on (`Tape::save`, `Tape::load`). On
+//! another player a person reads the bug when it stops, loads `NAME.n.tape` and starts at 00; HEARTBURN does it
+//! for them. What only HEARTBURN needs, the resources' slots, is in a file beside it, `NAME.tape.meta`, a line a slot:
+//!   `resource NAME ADDRESS LENGTH`      a resource's slot, those cells of tape 1, still empty; `bound` after it
+//!                                       when the cards hold the resource's values
+//!
+//! The one-file form tapes had before is still read (`Tape::parse`): `#` lines are comments, `# phase N` starts
+//! tape N, and `# resource ...` lines are slots.
+use std::path::{Path, PathBuf};
 
 use crate::cardiac::{Console, Ended, Stop};
 
@@ -68,39 +72,102 @@ impl Tape {
         }
     }
 
-    /// The `.tape` file: `title` as a comment, the slots, then one card per line.
-    pub fn text(&self, title: &str) -> String {
-        let mut s = format!(
-            "# {title}\n# CARDIAC cards, one per line, read from the top. The program's input goes after them.\n"
-        );
-        if self.phases.len() > 1 {
-            s += "# A program in phases: a stop with the bug on N (HRS N) asks for tape N, which goes in the reader before the input left; then start at 00.\n";
-        }
-        for t in &self.slots {
-            s += &format!(
-                "# resource {} {} {}{}\n",
-                t.name,
-                t.at,
-                t.len,
-                if t.bound { " bound" } else { "" }
-            );
-        }
-        for (i, p) in self.phases.iter().enumerate() {
-            if i > 0 {
-                s += &format!("# phase {}\n", i + 1);
-            }
-            for &c in p {
-                s += &if c < 0 {
+    /// A tape as a plain deck: one card per line.
+    pub fn deck_text(cards: &[i32]) -> String {
+        cards
+            .iter()
+            .map(|&c| {
+                if c < 0 {
                     format!("-{:03}\n", -c)
                 } else {
                     format!("{c:03}\n")
-                };
-            }
-        }
-        s
+                }
+            })
+            .collect()
     }
 
-    /// Read a `.tape` file.
+    /// The slots, as `NAME.tape.meta` holds them (empty when there are none).
+    pub fn meta_text(&self) -> String {
+        self.slots
+            .iter()
+            .map(|t| {
+                format!(
+                    "resource {} {} {}{}\n",
+                    t.name,
+                    t.at,
+                    t.len,
+                    if t.bound { " bound" } else { "" }
+                )
+            })
+            .collect()
+    }
+
+    /// Where tape `n` of the program whose tape 1 is `path` is kept: `NAME.tape`, `NAME.2.tape`, ....
+    pub fn phase_path(path: &Path, n: usize) -> PathBuf {
+        if n == 1 {
+            return path.to_path_buf();
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("tape");
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("tape");
+        path.with_file_name(format!("{stem}.{n}.{ext}"))
+    }
+
+    /// Where the slots of the program whose tape 1 is `path` are kept: `NAME.tape.meta`.
+    pub fn meta_path(path: &Path) -> PathBuf {
+        let mut p = path.as_os_str().to_owned();
+        p.push(".meta");
+        PathBuf::from(p)
+    }
+
+    /// Write each tape as a plain deck, tape 1 to `path` and tape n beside it (`phase_path`), and the slots, if
+    /// any, to `meta_path`. The files written.
+    pub fn save(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
+        let mut written = vec![];
+        let mut write = |p: PathBuf, text: String| {
+            std::fs::write(&p, text).map_err(|e| format!("{}: {e}", p.display()))?;
+            written.push(p);
+            Ok::<(), String>(())
+        };
+        for (i, cards) in self.phases.iter().enumerate() {
+            write(Tape::phase_path(path, i + 1), Tape::deck_text(cards))?;
+        }
+        if !self.slots.is_empty() {
+            write(Tape::meta_path(path), self.meta_text())?;
+        }
+        Ok(written)
+    }
+
+    /// Read the program whose tape 1 is `path`: its tapes `NAME.2.tape`, `NAME.3.tape`, ... beside it, up to the
+    /// first missing, and its slots from `NAME.tape.meta`. A tape in the one-file form is read whole.
+    pub fn load(path: &Path) -> Result<Tape, String> {
+        let read = |p: &Path| std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
+        let text = read(path)?;
+        let mut tape = Tape::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        if text.lines().any(|l| l.trim_start().starts_with('#')) {
+            return Ok(tape);
+        }
+        for n in 2.. {
+            let p = Tape::phase_path(path, n);
+            if !p.is_file() {
+                break;
+            }
+            let t = Tape::parse(&read(&p)?).map_err(|e| format!("{}: {e}", p.display()))?;
+            if t.phases.len() > 1 || !t.slots.is_empty() {
+                return Err(format!("{}: not a plain deck", p.display()));
+            }
+            tape.phases.extend(t.phases);
+        }
+        let meta = Tape::meta_path(path);
+        if meta.is_file() {
+            let slots = Tape::parse(&read(&meta)?.lines().map(|l| format!("# {l}\n")).collect::<String>())
+                .map_err(|e| format!("{}: {e}", meta.display()))?
+                .slots;
+            tape.slots = slots;
+        }
+        Ok(tape)
+    }
+
+    /// Read a tape: a plain deck, or the one-file form (comments, `# phase N`, `# resource ...`).
     pub fn parse(text: &str) -> Result<Tape, String> {
         let (mut phases, mut slots) = (vec![vec![]], vec![]);
         for (n, line) in text.lines().enumerate() {
@@ -231,10 +298,10 @@ impl Tape {
         limit: u64,
         out: &mut impl Console,
     ) -> Result<Ended, String> {
-        let deck = self.deck(input)?;
+        let first = self.deck(&[])?;
         Ok(crate::cardiac::run_reading::<true>(
-            &deck,
-            &[],
+            &first,
+            input,
             &self.phases[1..],
             more,
             out,
@@ -259,8 +326,8 @@ impl Tape {
         limit: u64,
         out: &mut impl Console,
     ) -> Result<(Stop, u64), String> {
-        let deck = self.deck(input)?;
-        let end = crate::cardiac::run_reading::<false>(&deck, &[], &self.phases[1..], more, out, limit);
+        let first = self.deck(&[])?;
+        let end = crate::cardiac::run_reading::<false>(&first, input, &self.phases[1..], more, out, limit);
         Ok((end.stop, end.steps))
     }
 }
@@ -295,9 +362,9 @@ mod tests {
     }
 
     #[test]
-    fn text_reads_back() {
+    fn tapes_save_as_plain_decks_and_load_back() {
         let t = Tape {
-            phases: vec![vec![2, 800, 3, -5, 803], vec![2, 800, 4, 900, 804]],
+            phases: vec![vec![2, 800, 3, -5, 2, 803], vec![2, 800, 4, 900, 2, 804]],
             slots: vec![
                 key(false),
                 Slot {
@@ -308,11 +375,60 @@ mod tests {
                 },
             ],
         };
-        let text = t.text("x.tape");
-        assert!(text.contains("\n-005\n") && text.contains("\n# phase 2\n") && text.contains("\n# resource key 9 2\n"));
-        assert!(text.contains("\n# resource map 20 3 bound\n"));
-        assert_eq!(Tape::parse(&text).unwrap(), t);
+        let dir = std::env::temp_dir().join(format!("heartburn-tape-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.tape");
+        let written = t.save(&path).unwrap();
+        assert_eq!(written, [path.clone(), dir.join("x.2.tape"), dir.join("x.tape.meta")]);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "002\n800\n003\n-005\n002\n803\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("x.tape.meta")).unwrap(),
+            "resource key 9 2\nresource map 20 3 bound\n"
+        );
+        assert_eq!(Tape::load(&path).unwrap(), t);
         assert!(Tape::parse("002\n1000\n").is_err());
+    }
+
+    #[test]
+    fn the_one_file_form_still_reads() {
+        let t =
+            Tape::parse("# x.tape\n# resource key 9 2\n002\n800\n003\n-005\n803\n# phase 2\n002\n800\n904\n").unwrap();
+        assert_eq!(t.phases, vec![vec![2, 800, 3, -5, 803], vec![2, 800, 904]]);
+        assert_eq!(t.slots, vec![key(false)]);
+    }
+
+    /// HRS 1 feeds tape 1 again, and phases go round: 1 → 2 → 1 → 2, each phase reading a card and punching it
+    /// plus its phase's number, until the input runs out.
+    #[test]
+    fn any_tape_in_any_order_as_often_as_asked() {
+        // tape 1: 03 INP 10, 04 CLA 10, 05 ADD 11, 06 STO 10, 07 OUT 10, 08 HRS 02; 11 holds 100
+        // tape 2: the same with 200, and HRS 01
+        let one = listing::deck(
+            3,
+            &[(3, 10), (4, 110), (5, 211), (6, 610), (7, 510), (8, 902), (11, 100)],
+        )
+        .unwrap();
+        let two = listing::deck(
+            3,
+            &[(3, 10), (4, 110), (5, 211), (6, 610), (7, 510), (8, 901), (11, 200)],
+        )
+        .unwrap();
+        let t = Tape {
+            phases: vec![one, two],
+            slots: vec![],
+        };
+        let (out, stop, _) = t.run(&[1, 2, 3, 4, 5], 10_000).unwrap();
+        assert_eq!((out, stop), (vec![101, 202, 103, 204, 105], Stop::OutOfCards));
+        // and on the machine a debugger holds
+        let mut m = crate::cardiac::Machine::with_tapes(&t.phases, &[1, 2, 3]);
+        let mut out = vec![];
+        use crate::cardiac::Event;
+        let events: Vec<Event> = (0..4).map(|_| m.run(10_000, &mut out)).collect();
+        assert_eq!(events, [Event::Tape(2), Event::Tape(1), Event::Tape(2), Event::Input]);
+        assert_eq!(out, [101, 202, 103]);
     }
 
     /// Past the input in the reader, each card comes from `more` when an INP asks for it, never ahead: by then the

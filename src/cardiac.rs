@@ -183,10 +183,11 @@ enum Overlay {
     Fed,
 }
 
-/// `run`, for a program in phases whose input is one stream, run as its operator would: `next(k)` gives tape
-/// k + 2 (k = 0, 1, ...). By the overlay convention a phase ends with HRS n, the machine stopped with the bug on
-/// the tape to load next (on 00 it is done); the operator puts tape n in the reader, ahead of whatever input is
-/// still there, and starts the loader at 00.
+/// `run`, for a program in phases whose input is one stream, run as its operator would. `first` is tape 1 and
+/// `later` tapes 2, 3, .... By the overlay convention a phase ends with HRS n, the machine stopped with the bug on
+/// the tape to load next (on 00 it is done); the operator puts a fresh copy of tape n in the reader, ahead of
+/// whatever is still there, and starts the loader at 00. Any tape, in any order, as often as asked: phases can
+/// loop or jump about. With no tape n it is a halt.
 pub fn run_phases<'a>(
     first: &'a [i32],
     input: &'a [i32],
@@ -201,7 +202,7 @@ pub fn run_phases<'a>(
         out,
         limit,
         Overlay::Fed,
-        |k| later.get(k).map(|t| t.as_slice()),
+        tapes(first, later),
     );
     (ended.stop, ended.steps)
 }
@@ -229,9 +230,24 @@ pub fn run_reading<'a, const TRACE: bool>(
     out: &mut impl Console,
     limit: u64,
 ) -> Ended {
-    run_feeding::<TRACE>(None, &[first, input], more, out, limit, Overlay::Fed, |k| {
-        later.get(k).map(|t| t.as_slice())
-    })
+    run_feeding::<TRACE>(
+        None,
+        &[first, input],
+        more,
+        out,
+        limit,
+        Overlay::Fed,
+        tapes(first, later),
+    )
+}
+
+/// Tape n of a program in phases: `first`, then `later`.
+fn tapes<'a>(first: &'a [i32], later: &'a [Vec<i32>]) -> impl FnMut(usize) -> Option<&'a [i32]> {
+    move |n| match n {
+        0 => None,
+        1 => Some(first),
+        n => later.get(n - 2).map(|t| t.as_slice()),
+    }
 }
 
 /// A program written straight into memory, the manual's short cut (a listing, `listing`), run from `pc` with
@@ -278,7 +294,7 @@ fn run_feeding<'a, const TRACE: bool>(
         part: 0,
         cur: parts.first().copied().unwrap_or(&[]),
         card: 0,
-        held: None,
+        held: vec![],
         more,
         overlay,
         next,
@@ -347,14 +363,14 @@ trait Reader {
     fn tape(&mut self, n: usize) -> bool;
 }
 
-/// The reader of a plain run: `parts` one after another, then `more`; in overlay mode the later tapes, by `next`.
+/// The reader of a plain run: `parts` one after another, then `more`; in overlay mode tape n, by `next(n)`.
 struct Deck<'a, 'm, M, N> {
     parts: &'m [&'a [i32]],
     part: usize,
     cur: &'a [i32],
     card: usize,
-    /// a phase's tape fed in ahead of the rest: where the reader was in the deck
-    held: Option<(&'a [i32], usize)>,
+    /// a phase's tape fed in ahead of the rest: where the reader was, before each tape still being read
+    held: Vec<(&'a [i32], usize)>,
     more: &'m mut M,
     overlay: Overlay,
     next: N,
@@ -368,7 +384,7 @@ impl<'a, M: Iterator<Item = i32>, N: FnMut(usize) -> Option<&'a [i32]>> Reader f
                 self.card += 1;
                 return Some(self.cur[self.card - 1]);
             }
-            if let Some((c, k)) = self.held.take() {
+            if let Some((c, k)) = self.held.pop() {
                 self.cur = c;
                 self.card = k;
                 continue;
@@ -386,27 +402,23 @@ impl<'a, M: Iterator<Item = i32>, N: FnMut(usize) -> Option<&'a [i32]>> Reader f
 
     #[inline(always)]
     fn tape(&mut self, n: usize) -> bool {
-        // the last tape fed has been read to its end by now: the reader is back in the deck
-        if self.card >= self.cur.len() {
-            if let Some((c, k)) = self.held.take() {
-                self.cur = c;
-                self.card = k;
-            }
+        // the tapes fed and read to their end are out of the reader
+        while self.card >= self.cur.len() {
+            let Some((c, k)) = self.held.pop() else {
+                break;
+            };
+            self.cur = c;
+            self.card = k;
         }
         match self.overlay {
             Overlay::Off => false,
             // stacked, the tape is the rest of the deck: with no card left, it is a plain halt
             Overlay::Stacked => self.card < self.cur.len() || self.parts[self.part + 1..].iter().any(|p| !p.is_empty()),
             Overlay::Fed => {
-                let tape = if n >= 2 && self.held.is_none() {
-                    (self.next)(n - 2)
-                } else {
-                    None
-                };
-                let Some(t) = tape else {
+                let Some(t) = (self.next)(n) else {
                     return false;
                 };
-                self.held = Some((self.cur, self.card));
+                self.held.push((self.cur, self.card));
                 self.cur = t;
                 self.card = 0;
                 true
@@ -578,40 +590,28 @@ pub struct Machine {
     paused: bool,
 }
 
-/// A `Machine`'s reader: the deck and the input, and in overlay mode the later tapes, each fed when asked for.
+/// A `Machine`'s reader: the cards in it, and the tapes of a program in phases, a fresh copy of tape n put in
+/// ahead of the rest whenever it stops for it.
 #[derive(Clone, Default)]
 struct Queue {
-    deck: std::collections::VecDeque<i32>,
-    /// the rest of a tape being fed, ahead of the deck
-    tape: std::collections::VecDeque<i32>,
-    feeding: bool,
-    /// tape 2, 3, ...
-    later: Vec<Vec<i32>>,
+    cards: std::collections::VecDeque<i32>,
+    /// tape 1, 2, ...
+    tapes: Vec<Vec<i32>>,
 }
 
 impl Reader for Queue {
     fn card(&mut self) -> Option<i32> {
-        if self.feeding {
-            if let Some(c) = self.tape.pop_front() {
-                return Some(c);
-            }
-            self.feeding = false;
-        }
-        self.deck.pop_front()
+        self.cards.pop_front()
     }
 
     fn tape(&mut self, n: usize) -> bool {
-        if self.feeding && self.tape.is_empty() {
-            self.feeding = false;
+        let Some(t) = n.checked_sub(1).and_then(|i| self.tapes.get(i)) else {
+            return false;
+        };
+        for &c in t.iter().rev() {
+            self.cards.push_front(c);
         }
-        match self.later.get(n.wrapping_sub(2)) {
-            Some(t) if n >= 2 && !self.feeding => {
-                self.tape = t.iter().copied().collect();
-                self.feeding = true;
-                true
-            }
-            _ => false,
-        }
+        true
     }
 }
 
@@ -631,12 +631,15 @@ impl Machine {
         }
     }
 
-    /// A cleared CARDIAC with `deck` in the reader (a tape, then its input) and the later tapes of a program in
-    /// phases, tape 2 first, fed as it stops for them: as `run_phases` runs it.
-    pub fn with_tapes(deck: &[i32], later: &[Vec<i32>]) -> Machine {
+    /// A cleared CARDIAC with tape 1 and then `input` in the reader, and each tape of a program in phases put in
+    /// when it stops for it: as `run_phases` runs it.
+    pub fn with_tapes(tapes: &[Vec<i32>], input: &[i32]) -> Machine {
         let mut m = Machine::new();
-        m.push(deck);
-        m.reader.later = later.to_vec();
+        if let Some(first) = tapes.first() {
+            m.push(first);
+        }
+        m.push(input);
+        m.reader.tapes = tapes.to_vec();
         m
     }
 
@@ -686,13 +689,17 @@ impl Machine {
     /// Put cards in the reader, after those in it.
     pub fn push(&mut self, cards: &[i32]) {
         assert!(cards.iter().all(|c| (-999..=999).contains(c)), "a card holds -999..999");
-        self.reader.deck.extend(cards);
+        self.reader.cards.extend(cards);
     }
 
     /// The next card INP will read.
     pub fn next_card(&self) -> Option<i32> {
-        let r = &self.reader;
-        r.tape.front().filter(|_| r.feeding).or(r.deck.front()).copied()
+        self.reader.cards.front().copied()
+    }
+
+    /// The cards in the reader, the next first.
+    pub fn cards(&self) -> impl Iterator<Item = i32> + '_ {
+        self.reader.cards.iter().copied()
     }
 
     /// Stop before the instruction in `cell` whenever the bug reaches it.

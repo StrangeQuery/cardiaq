@@ -34,7 +34,7 @@ fn counts() -> Vec<i32> {
 
 #[test]
 fn a_breakpoint_stops_before_its_cell_and_clearing_it_runs_on() {
-    let mut m = Machine::with_tapes(&counts(), &[]);
+    let mut m = Machine::with_tapes(&[counts()], &[]);
     let mut out = vec![];
     m.set_break(13);
     assert_eq!(m.run(1000, &mut out), Event::Break);
@@ -51,7 +51,7 @@ fn a_breakpoint_stops_before_its_cell_and_clearing_it_runs_on() {
 fn a_breakpoint_on_a_cell_the_program_writes_stays() {
     // 10 CLA 30, 11 STO 12, 12 HRS 00 (until 11 makes it OUT 31), 13 HRS 00; 30 holds 531 (OUT 31), 31 holds 42
     let d = deck(10, &[(10, 130), (11, 612), (12, 900), (13, 900), (30, 531), (31, 42)]);
-    let mut m = Machine::with_tapes(&d, &[]);
+    let mut m = Machine::with_tapes(&[d], &[]);
     let mut out = vec![];
     m.set_break(12);
     assert_eq!(m.run(1000, &mut out), Event::Break);
@@ -67,7 +67,7 @@ fn a_breakpoint_on_a_cell_the_program_writes_stays() {
 
 #[test]
 fn a_step_count_stops_exactly() {
-    let mut m = Machine::with_tapes(&counts(), &[]);
+    let mut m = Machine::with_tapes(&[counts()], &[]);
     let mut out = vec![];
     assert_eq!(m.run(7, &mut out), Event::Budget);
     assert_eq!(m.steps(), 7);
@@ -83,7 +83,7 @@ fn a_step_count_stops_exactly() {
 fn an_inp_with_no_card_waits_for_one() {
     // 10 INP 20, 11 OUT 20, 12 JMP 10
     let d = deck(10, &[(10, 20), (11, 520), (12, 810)]);
-    let mut m = Machine::with_tapes(&d, &[]);
+    let mut m = Machine::with_tapes(&[d], &[]);
     let mut out = vec![];
     assert_eq!(m.run(1000, &mut out), Event::Input);
     let (pc, steps) = (m.pc(), m.steps());
@@ -102,9 +102,7 @@ fn hrs_n_feeds_tape_n() {
     // phase 1: 03 INP 10, 04 OUT 10, 05 HRS 02; phase 2: 03 INP 11, 04 OUT 11, 05 HRS 00
     let one = deck(3, &[(3, 10), (4, 510), (5, 902)]);
     let two = deck(3, &[(3, 11), (4, 511), (5, 900)]);
-    let mut first = one.clone();
-    first.extend([5, 6]);
-    let mut m = Machine::with_tapes(&first, std::slice::from_ref(&two));
+    let mut m = Machine::with_tapes(&[one.clone(), two], &[5, 6]);
     let mut out = vec![];
     assert_eq!(m.run(1000, &mut out), Event::Tape(2));
     assert_eq!(
@@ -114,7 +112,7 @@ fn hrs_n_feeds_tape_n() {
     assert_eq!(m.run(1000, &mut out), Event::Halt);
     assert_eq!(out, [5, 6]);
     // with no tape 2, HRS 02 halts with the bug on 02
-    let mut m = Machine::with_tapes(&first, &[]);
+    let mut m = Machine::with_tapes(&[one], &[5, 6]);
     assert_eq!(m.run(1000, &mut vec![]), Event::Halt);
     assert_eq!(m.pc(), 2);
 }
@@ -127,11 +125,9 @@ fn state_matches_a_plain_run_at_every_step() {
     let two = listed(include_str!("../examples/sortem/sortem-2.lst"));
     let input: Vec<i32> = (0..35).map(|i| (i * 37 % 101) - 50).collect();
     let later = vec![two];
-    let mut first = one.clone();
-    first.extend(&input);
     let total =
         cardiac::run_reading::<false>(&one, &input, &later, &mut std::iter::empty(), &mut vec![], u64::MAX).steps;
-    let mut m = Machine::with_tapes(&first, &later);
+    let mut m = Machine::with_tapes(&[one.clone(), later[0].clone()], &input);
     let mut punched = vec![];
     let mut halted = false;
     for n in (0..total).step_by(613).chain([total - 1, total]) {
