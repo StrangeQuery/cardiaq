@@ -1,0 +1,23 @@
+Program No. 7: Bootstrap and Loading Program for Addition (manual page 34)
+
+INPUT CARD  CONTENTS  COMMENTS
+               001    Bootstrap (already in memory cell 00).
+     1         002       "
+     2         800       "
+     3         010    Addressing instruction.
+     4         017    Program word.
+     5         011    Addressing instruction.
+     6         018    Program word.
+     7         012    Addressing instruction.
+     8         117    Program word.
+     9         013    Addressing instruction.
+    10         218    Program word.
+    11         014    Addressing instruction.
+    12         619    Program word.
+    13         015    Addressing instruction.
+    14         519    Program word.
+    15         016    Addressing instruction.
+    16         900    Program word.
+    17        BLANK   Signals end of program.
+    18         ---    Data word (number to be added).
+    19         ---       "     "     "   "  "

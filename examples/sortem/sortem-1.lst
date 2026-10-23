@@ -1,0 +1,65 @@
+sortem, phase 1 of 2: read 35 numbers into cells 64-98 and sort them in place, then HRS 2
+(load the phase 2 tape over this one; the sorted numbers stay in memory)
+
+Address  Contents  Label   Opcode  Operand  Comment
+  03       154     start   CLA     k0
+  04       657             STO     i
+  05       158     rd      CLA     opinp    build INP tab+i
+  06       257             ADD     i
+  07       608             STO     rdi
+  08       000     rdi     DATA    0        INP tab+i
+  09       157             CLA     i
+  10       253             ADD     one
+  11       657             STO     i
+  12       755             SUB     n
+  13       305             TAC     rd
+  14       155             CLA     n        N-1 passes of bubble sort
+  15       753             SUB     one
+  16       663             STO     pass
+  17       154     ps      CLA     k0
+  18       660             STO     j
+  19       156     cmp     CLA     opcla    build CLA tab+j and CLA tab+j+1
+  20       260             ADD     j
+  21       624             STO     la
+  22       253             ADD     one
+  23       626             STO     lb
+  24       000     la      DATA    0
+  25       661             STO     a
+  26       000     lb      DATA    0
+  27       662             STO     b
+  28       761             SUB     a        b - a < 0: out of order
+  29       342             TAC     swap
+  30       160     next    CLA     j
+  31       253             ADD     one
+  32       660             STO     j
+  33       253             ADD     one
+  34       755             SUB     n
+  35       319             TAC     cmp
+  36       163             CLA     pass
+  37       753             SUB     one
+  38       663             STO     pass
+  39       753             SUB     one
+  40       352             TAC     sorted
+  41       817             JMP     ps
+  42       159     swap    CLA     opsto    build STO tab+j and STO tab+j+1
+  43       260             ADD     j
+  44       648             STO     sa
+  45       253             ADD     one
+  46       650             STO     sb
+  47       162             CLA     b
+  48       000     sa      DATA    0
+  49       161             CLA     a
+  50       000     sb      DATA    0
+  51       830             JMP     next
+  52       902     sorted  HRS     2
+  53       001     one     DATA    1
+  54       000     k0      DATA    0
+  55       035     n       DATA    35
+  56       164     opcla   CLA     64
+  57       000     i       DATA    0
+  58       064     opinp   INP     64
+  59       664     opsto   STO     64
+  60       000     j       DATA    0
+  61       000     a       DATA    0
+  62       000     b       DATA    0
+  63       000     pass    DATA    0

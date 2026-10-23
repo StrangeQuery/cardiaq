@@ -1,0 +1,74 @@
+Program No. 10: Improved Nim Game (manual pages 47-48)
+(If player is to move first, start with bug in cell 52. If
+CARDIAC moves first, start with cell 53)
+
+ADDRESS  CONTENTS  COMMENTS
+  52       015     Read P
+  53       114  }
+  54       715  }  Revise N
+  55       614  }
+  56       514     Print N
+  57       718     Subtract 4      }
+  58       361     Acc. negative?  }  FIND R
+  59       617     Store           }
+  60       857     Jump            }
+  61       115     Load P (00P in acc.)
+  62       410     Shift left (0P0 in acc.)
+  63       217     Add R (0PR in acc.)
+  64       219     Add 100 (1PR in acc.)
+  65       666     Store (1PR in Cell 66)
+  66       100     Load C (CLA contents of Cell PR)
+  67       616     Store C
+  68       516     Print C
+  69       114  }
+  70       716  }  Revise N
+  71       614  }
+  72       514     Print N
+  73       952     Halt (Return to 52)
+
+All moves will be indicated by a three-digit number 001 to 003
+stating the quantity of pebbles removed from the pile. The player
+will write his moves on the input cards. CARDIAC will print its
+moves on output cards in the same way. Its moves should now be
+entered into the memory locations shown below.
+
+Table of CARDIAC's Moves
+
+ADDRESS  CONTENTS
+  00       001
+  01       001
+  02       002
+  03       003
+  10       003
+  11       002
+  12       002
+  13       003
+  20       001
+  21       001
+  22       001
+  23       003
+  30       001
+  31       001
+  32       002
+  33       002
+
+Table of Constants and Variables
+
+ADDRESS  CONTENTS    DESCRIPTION
+  14     N(start)    N = number of pebbles in pile
+  15       000       P = number of pebbles player takes
+  16       000       C = number of pebbles CARDIAC takes
+  17     N(start)    R = residue
+  18       004       The quantity 4 to be subtracted
+  19       100       Op code 1, CLA
+
+Directions
+(1) Load the program and the table of CARDIAC's moves into the memory.
+(2) Load the table of constants and variables into the memory. Note that
+    the starting quantity, N, is loaded into the residue cell 17 as well
+    as cell 14. This enables the program to work even for starting
+    quantities of N which are less than four.
+(3) Start with the bug in cell 53, if CARDIAC is to go first. If the
+    player is to go first, start with the bug in cell 52. The player is
+    to write the number of pebbles he takes (001, 002, or 003) on input
+    cards.

@@ -1,0 +1,24 @@
+Program No. 9: Single-Pile Nim (Ten Pebbles) (manual page 41)
+
+ADDRESS  CONTENTS  COMMENT
+  00       001     Read an input card (this instruction is wired in).
+  01       529     This is used only when CARDIAC plays first. Cell 01 must be reset to 529 for each new game.
+  02       900     Halt and reset.
+
+The following look-up table must be entered in CARDIAC's memory.
+
+ADDRESS  CONTENTS  ADDRESS  CONTENTS
+  10       000       24       013
+  11       001       25       014
+  12       020       26       015
+  13       030       27       034
+  14       022       28       017
+  15       023       29       019
+  16       033       30       000
+  17       034       31       010
+  18       026       32       020
+  19       027       33       012
+  20       000       34       013
+  21       010       35       014
+  22       011       36       024
+  23       030       37       025

@@ -1,0 +1,13 @@
+Program No. 4: Rocket-Launching Countdown (manual page 27)
+(Launch to occur when computer output generates 000)
+
+ADDRESS  CONTENTS  COMMENTS
+  00      +001     Data.
+  19      -004     Data.
+  20       119     -004 to accumulator.
+  21       200     Add 001.
+  22       618     Store accum. in cell 18.
+  23       518     Print contents of cell 18.
+  24       321     Test acc. { If minus, jump to cell 21.
+                             { If plus, go ahead to cell 25.
+  25       900     Halt and reset.

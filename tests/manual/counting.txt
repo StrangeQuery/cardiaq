@@ -1,0 +1,18 @@
+Program No. 2: Counting (manual page 22; the same table with comments, page 23)
+
+ADDRESS  CONTENTS  COMMENTS
+  20       100     The contents of cell 00 (001) are put in the accumulator.
+  21       603     The accumulator contents (001) are copied into cell 03, (without being erased from the accumulator).
+  22       503     The contents of cell 03 are printed out. This is the first count.
+  23       200     The contents of cell 00 (001) are added to the contents of the accumulator (001) raising the sum to "002".
+  24       603     The accumulator's contents (002) are copied into cell 03, (without being erased from the accumulator).
+  25       503     The contents of cell 03 are printed out. This is the second count.
+  26       200     The contents of cell 00 (001) are added to the accumulator, raising sum to "003".
+  27       603     The accumulator's contents (003) are copied into cell 03, (without being erased from the accumulator).
+  28       503     The contents of cell 03 are printed out. This is the third count.
+  29       200     The contents of cell 00 are added to accumulator, raising sum to "004".
+  30       603     The accumulator's contents (004) are copied into cell 03.
+  31       503     The contents of cell 03 are printed out. This is the fourth count.
+  32       200     The contents of cell 00 are added to accumulator, raising sum to "005".
+  33       603     The accumulator's contents (005) are copied into cell 03.
+  34       503     The contents of cell 03 are printed out. This is the fifth count.

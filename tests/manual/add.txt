@@ -1,0 +1,10 @@
+Program No. 1: Adding Number "A" to Number "B" to Produce Sum "S" (manual page 20)
+
+ADDRESS  CONTENTS  COMMENTS
+  17       034     Read "A".
+  18       035     Read "B".
+  19       134     Clear accumulator and add "A".
+  20       235     Add "B" ("S" is now in accumulator).
+  21       636     Store "S".
+  22       536     Print "S".
+  23       900     Halt and reset.

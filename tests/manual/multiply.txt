@@ -1,0 +1,21 @@
+Program No. 5: Multiplication by a Single-Digit Multiplier (manual page 30)
+(multiplier) A x BC (multiplicand)
+
+ADDRESS  CONTENTS  COMMENT
+  07       068     Read "BC" into cell 68.
+  08       404     Clear* acc.                        { Clearing cell
+  09       669     Store acc. (zero) in cell 69.      { 69 for future
+                                                      { storage of sum.
+  10       070     Read "A" into cell 70. This will be "n".
+  11       170     "n" to acc.
+  12       700     Subtract 1 from "n"
+  13       670     Store revised "n."
+  14       319     Test acc. sign.
+  15       169     Clear acc. Enter contents of cell 69 (previous sum).
+  16       268     Add "BC" to acc.
+  17       669     Store revised sum in cell 69.
+  18       811     Jump back to cell 11.
+  19       569     Print (product of "A" x "BC").
+  20       900     Halt and reset.
+
+*See Section 12 for explanation of how this instruction clears the accumulator.

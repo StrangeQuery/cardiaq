@@ -149,7 +149,7 @@ const POW10: [i32; 10] = [
 /// For speed each cell's instruction is kept decoded beside its value (op, address), and re-decoded whenever
 /// the cell is written, which is exactly when self-modifying code changes it.
 pub fn run(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) {
-    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, Overlay::Off, |_| None);
+    let ended = run_feeding::<false>(None, parts, &mut std::iter::empty(), out, limit, Overlay::Off, |_| None);
     (ended.stop, ended.steps)
 }
 
@@ -157,7 +157,15 @@ pub fn run(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) 
 /// the phase before reads. At a stop for tape n (HRS n, the overlay convention) the reader holds it next, and the
 /// operator starts the loader at 00; with no card left it is a halt, as is a stop with the bug on 00.
 pub fn run_stacked(parts: &[&[i32]], out: &mut impl Console, limit: u64) -> (Stop, u64) {
-    let ended = run_feeding::<false>(parts, &mut std::iter::empty(), out, limit, Overlay::Stacked, |_| None);
+    let ended = run_feeding::<false>(
+        None,
+        parts,
+        &mut std::iter::empty(),
+        out,
+        limit,
+        Overlay::Stacked,
+        |_| None,
+    );
     (ended.stop, ended.steps)
 }
 
@@ -184,6 +192,7 @@ pub fn run_phases<'a>(
     limit: u64,
 ) -> (Stop, u64) {
     let ended = run_feeding::<false>(
+        None,
         &[first, input],
         &mut std::iter::empty(),
         out,
@@ -217,16 +226,33 @@ pub fn run_reading<'a, const TRACE: bool>(
     out: &mut impl Console,
     limit: u64,
 ) -> Ended {
-    run_feeding::<TRACE>(&[first, input], more, out, limit, Overlay::Fed, |k| {
+    run_feeding::<TRACE>(None, &[first, input], more, out, limit, Overlay::Fed, |k| {
         later.get(k).map(|t| t.as_slice())
     })
 }
 
-/// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more. Once `parts`
-/// are read, INP takes its cards from `more`. In overlay mode, `next` gives a later phase's tape when the program
-/// stops for it, unless the deck holds it already (`Overlay`).
+/// A program written straight into memory, the manual's short cut (a listing, `listing`), run from `pc` with
+/// `parts` in the reader and then the cards of `more`, as INP asks for them. `memory` is the machine's 100 cells
+/// (cell 00 is wired to 001 whatever it holds). A stop with the bug on a cell other than 00 is a halt: there are no
+/// tapes to feed.
+pub fn run_from(
+    memory: &[i32; 100],
+    pc: usize,
+    parts: &[&[i32]],
+    more: &mut impl Iterator<Item = i32>,
+    out: &mut impl Console,
+    limit: u64,
+) -> Ended {
+    run_feeding::<false>(Some((memory, pc)), parts, more, out, limit, Overlay::Off, |_| None)
+}
+
+/// The machine. With TRACE off, the instructions run are not kept track of, and cost nothing more. It starts
+/// cleared at 00, or from `from`'s memory and cell. Once `parts` are read, INP takes its cards from `more`. In
+/// overlay mode, `next` gives a later phase's tape when the program stops for it, unless the deck holds it already
+/// (`Overlay`).
 #[inline(always)]
 fn run_feeding<'a, const TRACE: bool>(
+    from: Option<(&[i32; 100], usize)>,
     parts: &[&'a [i32]],
     more: &mut impl Iterator<Item = i32>,
     out: &mut impl Console,
@@ -241,9 +267,17 @@ fn run_feeding<'a, const TRACE: bool>(
     fn decode(w: i32) -> (Op, u8) {
         DECODED[(w + 999) as usize]
     }
+    let mut pc = 0usize;
+    if let Some((mem, at)) = from {
+        for (a, &w) in mem.iter().enumerate() {
+            m[a] = w;
+            dec[a] = decode(w);
+        }
+        pc = at;
+    }
     m[0] = 1;
     dec[0] = decode(1);
-    let (mut acc, mut pc, mut steps) = (0i32, 0usize, 0u64);
+    let (mut acc, mut steps) = (0i32, 0u64);
     let (mut part, mut card) = (0usize, 0usize);
     let mut cur: &[i32] = parts.first().copied().unwrap_or(&[]);
     // a phase's tape fed in ahead of the rest: where the reader was in the deck; and the phase loaded, less one

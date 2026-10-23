@@ -1,0 +1,42 @@
+sortem, phase 2 of 2: cells 64-98 already hold the sorted numbers; print them, then mean, min, max, median
+
+Address  Contents  Label   Opcode  Operand  Comment
+  03       135     start   CLA     k0
+  04       638             STO     i
+  05       639             STO     sum
+  06       137     pr      CLA     opcla    build CLA tab+i
+  07       238             ADD     i
+  08       609             STO     ld
+  09       000     ld      DATA    0
+  10       640             STO     v
+  11       540             OUT     v        the sorted numbers
+  12       239             ADD     sum
+  13       639             STO     sum
+  14       138             CLA     i
+  15       234             ADD     one
+  16       638             STO     i
+  17       736             SUB     n
+  18       306             TAC     pr
+  19       135             CLA     k0       mean = sum / N, by subtracting
+  20       641             STO     q
+  21       139     dv      CLA     sum
+  22       736             SUB     n
+  23       329             TAC     dvd
+  24       639             STO     sum
+  25       141             CLA     q
+  26       234             ADD     one
+  27       641             STO     q
+  28       821             JMP     dv
+  29       541     dvd     OUT     q        mean
+  30       564             OUT     64       min
+  31       598             OUT     98       max
+  32       581             OUT     81       median
+  33       900             HRS     0
+  34       001     one     DATA    1
+  35       000     k0      DATA    0
+  36       035     n       DATA    35
+  37       164     opcla   CLA     64
+  38       000     i       DATA    0
+  39       000     sum     DATA    0
+  40       000     v       DATA    0
+  41       000     q       DATA    0

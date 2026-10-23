@@ -1,0 +1,26 @@
+Program No. 8: Subroutine for "A" + "B" = SUM (manual page 37)
+
+ADDRESS  CONTENTS  COMMENT
+  86       199  }  Prepare exit.
+  87       694  }
+  88       196  }
+  89       298  }  Add least significant digits.
+  90       698  }
+  91       403  }  Shift overflow right and add
+  92       295  }  most significant digits.
+  93       297  }
+  94       8__  }  Return to program. (__ will be the
+                }  address of the last instruction plus one.)
+
+                    MAIN PROGRAM
+
+ADDRESS  CONTENTS  COMMENT
+  50       095  }
+  51       096  }
+  52       097  }  Input and calling sequence.
+  53       098  }
+  54       886  }
+  55       659  }
+  56       559  }  Output.
+  57       598  }
+  58       900     Halt and reset.

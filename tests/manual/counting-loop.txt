@@ -1,0 +1,8 @@
+Program No. 3: Counting Program with Loop (manual page 24)
+
+ADDRESS  CONTENTS  COMMENTS
+  21       100     Clear and add contents of cell 00.
+  22       603     Store contents of acc. in cell 03.
+  23       503     Print contents of cell 03.
+  24       200     Add contents of cell 00.
+  25       822     Jump to instruction in cell 22.

@@ -1,0 +1,100 @@
+sortem: read 2 numbers, sort them, print them sorted, then mean, min, max, median
+everything in one tape: 94 cells of code and variables leave room for only 2 numbers (cells 97-98)
+
+Address  Contents  Label   Opcode  Operand  Comment
+  03       184     start   CLA     k0
+  04       687             STO     i
+  05       188     rd      CLA     opinp    build INP tab+i
+  06       287             ADD     i
+  07       608             STO     rdi
+  08       000     rdi     DATA    0        INP tab+i
+  09       187             CLA     i
+  10       283             ADD     one
+  11       687             STO     i
+  12       785             SUB     n
+  13       305             TAC     rd
+  14       185             CLA     n        N-1 passes of bubble sort
+  15       783             SUB     one
+  16       693             STO     pass
+  17       184     ps      CLA     k0
+  18       690             STO     j
+  19       186     cmp     CLA     opcla    build CLA tab+j and CLA tab+j+1
+  20       290             ADD     j
+  21       624             STO     la
+  22       283             ADD     one
+  23       626             STO     lb
+  24       000     la      DATA    0
+  25       691             STO     a
+  26       000     lb      DATA    0
+  27       692             STO     b
+  28       791             SUB     a        b - a < 0: out of order
+  29       342             TAC     swap
+  30       190     next    CLA     j
+  31       283             ADD     one
+  32       690             STO     j
+  33       283             ADD     one
+  34       785             SUB     n
+  35       319             TAC     cmp
+  36       193             CLA     pass
+  37       783             SUB     one
+  38       693             STO     pass
+  39       783             SUB     one
+  40       352             TAC     sorted
+  41       817             JMP     ps
+  42       189     swap    CLA     opsto    build STO tab+j and STO tab+j+1
+  43       290             ADD     j
+  44       648             STO     sa
+  45       283             ADD     one
+  46       650             STO     sb
+  47       192             CLA     b
+  48       000     sa      DATA    0
+  49       191             CLA     a
+  50       000     sb      DATA    0
+  51       830             JMP     next
+  52       184     sorted  CLA     k0
+  53       687             STO     i
+  54       694             STO     sum
+  55       186     pr      CLA     opcla    build CLA tab+i
+  56       287             ADD     i
+  57       658             STO     ld
+  58       000     ld      DATA    0
+  59       695             STO     v
+  60       595             OUT     v        the sorted numbers
+  61       294             ADD     sum
+  62       694             STO     sum
+  63       187             CLA     i
+  64       283             ADD     one
+  65       687             STO     i
+  66       785             SUB     n
+  67       355             TAC     pr
+  68       184             CLA     k0       mean = sum / N, by subtracting
+  69       696             STO     q
+  70       194     dv      CLA     sum
+  71       785             SUB     n
+  72       378             TAC     dvd
+  73       694             STO     sum
+  74       196             CLA     q
+  75       283             ADD     one
+  76       696             STO     q
+  77       870             JMP     dv
+  78       596     dvd     OUT     q        mean
+  79       597             OUT     97       min
+  80       598             OUT     98       max
+  81       598             OUT     98       median
+  82       900             HRS     0
+  83       001     one     DATA    1
+  84       000     k0      DATA    0
+  85       002     n       DATA    2
+  86       197     opcla   CLA     97
+  87       000     i       DATA    0
+  88       097     opinp   INP     97
+  89       697     opsto   STO     97
+  90       000     j       DATA    0
+  91       000     a       DATA    0
+  92       000     b       DATA    0
+  93       000     pass    DATA    0
+  94       000     sum     DATA    0
+  95       000     v       DATA    0
+  96       000     q       DATA    0
+  97       000     tab     DATA    0
+  98       000             DATA    0

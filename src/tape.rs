@@ -1,7 +1,7 @@
 //! Tapes: a program as the cards CARDIAC loads it from, and the `.tape` file they are written to.
 //!
 //! A tape starts with the two-card loader (002, 800), then an address card and a value card for each cell of the
-//! program, then a card that jumps to its start (see `asm::tape`). The program's input comes after it.
+//! program, then the pair 002 8xx that starts it (see `listing::deck`). The program's input comes after it.
 //!
 //! A program in phases (`overlay()`) has a tape for each phase. Each phase ends with HRS n, a stop with the bug on
 //! the tape to load next (the overlay convention), and that tape goes in the reader then, ahead of whatever input
@@ -268,15 +268,19 @@ impl Tape {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asm;
+    use crate::listing::{self, Listing};
 
-    /// A program that prints its two-cell resource, then each card of its input, until the reader is empty.
-    const PRINTS: &str = "start: OUT t\n OUT t+1\nnext: INP c\n OUT c\n JMP next\nc: DAT 0\nt: DAT 0\n DAT 0\n";
+    /// A program that prints its two-cell resource (cells 09 and 10), then each card of its input, until the reader
+    /// is empty.
+    const PRINTS: &str = "03 509 OUT 09\n04 510 OUT 10\n05 008 next INP 08\n06 508 OUT 08\n07 805 JMP next\n\
+                          08 000\n09 000\n10 000\n";
 
     fn tape_of(src: &str, slots: Vec<Slot>) -> Tape {
-        let p = asm::assemble(3, src).unwrap();
+        let Listing::Memory(cells) = listing::parse(src).unwrap().listing else {
+            panic!("not a memory listing")
+        };
         Tape {
-            phases: vec![asm::tape(p.label("start"), &p.cells)],
+            phases: vec![listing::deck(3, &cells).unwrap()],
             slots,
         }
     }
@@ -358,8 +362,8 @@ mod tests {
     fn a_later_phase_is_read_when_the_one_before_ends() {
         // phase 1 reads a card, prints it and stops for tape 2 (HRS 2); phase 2, loaded over it, reads the next card
         // and prints it
-        let one = asm::tape(3, &[(3, 10), (4, 510), (5, 902), (10, 0)]);
-        let two = asm::tape(3, &[(3, 11), (4, 511), (5, 900)]);
+        let one = listing::deck(3, &[(3, 10), (4, 510), (5, 902), (10, 0)]).unwrap();
+        let two = listing::deck(3, &[(3, 11), (4, 511), (5, 900)]).unwrap();
         let t = Tape {
             phases: vec![one, two],
             slots: vec![],

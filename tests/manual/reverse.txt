@@ -1,0 +1,18 @@
+Program No. 6: Reversing the Order of a Number "abc" (manual page 32)
+
+ADDRESS  CONTENTS  COMMENTS
+  15       039     Read "abc" into cell 39.
+  16       139     CLA "abc".
+  17       431     Shift acc. to produce "c00".
+  18       640     Store acc. in cell 40.
+  19       139     CLA "abc".
+  20       413     Shift acc. to produce "00a".
+  21       240     Add contents cell 40 to produce "c0a" in acc.
+  22       640     Store acc. in cell 40.
+  23       139     CLA "abc".
+  24       423     Shift acc. to produce "00b".
+  25       410     Shift acc. to produce "0b0".
+  26       240     Add contents cell 40 to produce "cba" in acc.
+  27       640     Store acc. in cell 40.
+  28       540     Print contents cell 40.
+  29       900     Halt and reset.
