@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use heartburn::cardiac::{self, Console, Stop};
 use heartburn::cardiasm;
-use heartburn::listing::{self, Listing};
+use heartburn::listing::{self, Listing, Notes};
 use heartburn::tape::{values, Tape};
 
 /// Instructions a run may take before it is called a program that never stops.
@@ -32,6 +32,12 @@ Usage:
   heartburn tape LISTING... [--start NN] [-o OUT]
       A listing to a tape that loads itself and starts at NN (or where run would start it): a plain deck, FILE.tape,
       or OUT (NAME.2.tape for a program's tape 2).
+  heartburn listing FILE... [--start NN] [-o OUT]
+      A program in Brian Stuart's six columns, Address, Contents, Label, Opcode, Operand, Comment, a tab between
+      each, under a line saying where it starts: FILE.lst, or OUT. From a tape (each of its tapes: NAME.lst,
+      NAME.2.lst, ...), a deck, Jason Whittington's CARDIASM, or listings in any form heartburn runs (their labels
+      and comments kept). The cells a program can run from its start are instructions, the rest DATA, unless the
+      source says.
   heartburn cardiasm FILE.cardiasm
       Jason Whittington's CARDIASM: assemble it to a deck, FILE.cardimg, beside it.
   heartburn bench
@@ -108,12 +114,14 @@ fn run(file: &str, input: Option<Vec<i32>>) {
 }
 
 /// Read listings, the later loaded over the earlier, their warnings to standard error. A deck stands alone. With
-/// them, where the program starts, if the first listing says (its first instruction).
-fn read_listings(files: &[String]) -> (Listing, Option<usize>) {
+/// them, where the program starts, if the first listing says (its first instruction), and what they say of the
+/// cells besides their contents.
+fn read_listings(files: &[String]) -> (Listing, Option<usize>, Notes) {
     let mut cells: Vec<(usize, i32)> = vec![];
     let mut unwritten: Vec<(String, usize, String)> = vec![];
     let mut deck = None;
     let mut start = None;
+    let mut notes = Notes::default();
     for (i, file) in files.iter().enumerate() {
         let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {e}")));
         let read = listing::parse(&text).unwrap_or_else(|e| die(format!("{file}: {e}")));
@@ -124,6 +132,10 @@ fn read_listings(files: &[String]) -> (Listing, Option<usize>) {
         if i == 0 {
             start = read.start;
         }
+        notes.labels.extend(read.notes.labels);
+        notes.comments.extend(read.notes.comments);
+        notes.data.extend(read.notes.data);
+        notes.code.extend(read.notes.code);
         match read.listing {
             Listing::Memory(c) => {
                 for (a, v) in c {
@@ -144,8 +156,8 @@ fn read_listings(files: &[String]) -> (Listing, Option<usize>) {
     }
     match deck {
         Some(_) if files.len() > 1 => die("a deck listed card by card is read in alone, not with other listings"),
-        Some(d) => (Listing::Deck(d), None),
-        None => (Listing::Memory(cells), start),
+        Some(d) => (Listing::Deck(d), None, notes),
+        None => (Listing::Memory(cells), start, notes),
     }
 }
 
@@ -157,7 +169,7 @@ fn run_listing(files: &[String], start: Option<usize>, input: Option<Vec<i32>>) 
         None => (&[], &mut stdin),
     };
     let mut more = more;
-    let (listing, first) = read_listings(files);
+    let (listing, first, _) = read_listings(files);
     match listing {
         Listing::Memory(cells) => {
             let start = start.or(first).unwrap_or(cells[0].0);
@@ -194,7 +206,7 @@ fn run_listing(files: &[String], start: Option<usize>, input: Option<Vec<i32>>) 
 }
 
 fn tape(files: &[String], start: Option<usize>, output: Option<&str>) {
-    let (read, first) = read_listings(files);
+    let (read, first, _) = read_listings(files);
     let cards = match read {
         Listing::Memory(cells) => listing::deck(start.or(first).unwrap_or(cells[0].0), &cells)
             .unwrap_or_else(|e| die(format!("{}: {e}", files[0]))),
@@ -218,6 +230,81 @@ fn tape(files: &[String], start: Option<usize>, output: Option<&str>) {
         .unwrap_or_else(|| Path::new(&files[0]).with_extension("tape"));
     std::fs::write(&out, Tape::deck_text(&cards)).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
     eprintln!("{}: {} cards", out.display(), cards.len());
+}
+
+/// Write `text` to `out`, unless that is one of the files it was made from.
+fn write_new(out: &Path, text: &str, from: &[String]) {
+    if from.iter().any(|f| Path::new(f) == out) {
+        die(format!(
+            "{}: that is the file it is made from; say where it goes with -o",
+            out.display()
+        ))
+    }
+    std::fs::write(out, text).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
+}
+
+/// `heartburn listing`: tapes, decks, CARDIASM or listings in Brian Stuart's six columns.
+fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
+    let out = output
+        .map(Path::new)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| Path::new(&files[0]).with_extension("lst"));
+    let one = |path: &Path, cells: &[(usize, i32)], at: Option<usize>, notes: &Notes| {
+        if at.is_none() {
+            eprintln!(
+                "{}: where it starts isn't known: every cell is DATA (say where with --start)",
+                path.display()
+            );
+        }
+        write_new(path, &listing::six_columns(cells, at, notes), files);
+        eprintln!("{}: {} cells", path.display(), cells.len());
+    };
+    match files {
+        [f] if is_tape(f) => {
+            let tape = Tape::load(Path::new(f)).unwrap_or_else(|e| die(e));
+            if start.is_some() && tape.phases.len() > 1 {
+                bad_usage("--start: a program in phases starts each tape where its loader says")
+            }
+            for (i, cards) in tape.phases.iter().enumerate() {
+                let listing::Loaded { cells, start: at, left } =
+                    listing::from_deck(cards).unwrap_or_else(|e| die(format!("{f}: tape {}: {e}", i + 1)));
+                if !left.is_empty() {
+                    eprintln!(
+                        "{f}: tape {}: {} cards after the program, its input: not in the listing",
+                        i + 1,
+                        left.len()
+                    );
+                }
+                one(&Tape::phase_path(&out, i + 1), &cells, start.or(at), &Notes::default());
+            }
+        }
+        [f] if f.ends_with(".cardiasm") => {
+            let src = std::fs::read_to_string(f).unwrap_or_else(|e| die(format!("{f}: {e}")));
+            let img = cardiasm::compile(&src).unwrap_or_else(|e| die(format!("{f}: {e}")));
+            let cells: Vec<(usize, i32)> = img.cells.iter().map(|c| (c.0 as usize, c.1)).collect();
+            let notes = Notes {
+                labels: img
+                    .cells
+                    .iter()
+                    .filter(|c| !c.2.is_empty())
+                    .map(|c| (c.2.clone(), c.0 as usize))
+                    .collect(),
+                ..Notes::default()
+            };
+            one(&out, &cells, Some(start.unwrap_or(img.entry as usize)), &notes);
+        }
+        _ if files.iter().any(|f| is_tape(f) || f.ends_with(".cardiasm")) => {
+            bad_usage("one tape or CARDIASM source at a time, and not with listings")
+        }
+        _ => match read_listings(files) {
+            (Listing::Memory(cells), first, notes) => one(&out, &cells, start.or(first), &notes),
+            (Listing::Deck(d), _, _) => {
+                let listing::Loaded { cells, start: at, .. } =
+                    listing::from_deck(&d.cards).unwrap_or_else(|e| die(format!("{}: {e}", files[0])));
+                one(&out, &cells, start.or(at), &Notes::default())
+            }
+        },
+    }
 }
 
 fn assemble_cardiasm(file: &str) {
@@ -315,6 +402,10 @@ fn main() {
                 bad_usage("tape makes a tape of listings")
             }
             tape(&files, start, out.as_deref())
+        }
+        [c, rest @ ..] if c == "listing" && after.is_none() => {
+            let (files, start, out) = files_and_options(rest);
+            listing_of(&files, start, out.as_deref())
         }
         [c, ..] if c == "asm" => die(
             "heartburn asm is gone, and its syntax with it: write the listing as the 1968 manual or Brian \

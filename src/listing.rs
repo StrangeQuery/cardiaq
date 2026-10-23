@@ -47,6 +47,19 @@ pub struct Read {
     pub unwritten: Vec<(usize, String)>,
     /// where the program starts, when the listing says: its first instruction, in a listing that names its opcodes
     pub start: Option<usize>,
+    /// what the listing says of its cells besides their contents
+    pub notes: Notes,
+}
+
+/// What a listing says of its cells besides their contents: their names, comments, and which are data and which
+/// instructions (when its opcode column says).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Notes {
+    /// each label and the cell it names, in the order of the cells
+    pub labels: Vec<(String, usize)>,
+    pub comments: Vec<(usize, String)>,
+    pub data: Vec<usize>,
+    pub code: Vec<usize>,
 }
 
 const OPS: [&str; 10] = ["INP", "CLA", "ADD", "TAC", "SFT", "OUT", "STO", "SUB", "JMP", "HRS"];
@@ -102,6 +115,9 @@ struct Line {
     unwritten: Option<String>,
     /// the opcode (0-9, or 10 for DATA) and its operand, as written
     instruction: Option<(usize, String)>,
+    /// what follows the operand; and all that follows the contents, for when the opcode turns out to be prose
+    comment: String,
+    notes: String,
 }
 
 /// The tokens of a line: whitespace and `|` separate them.
@@ -174,7 +190,19 @@ fn parse_deck(text: &str) -> Result<Read, String> {
         warnings,
         unwritten: vec![],
         start: None,
+        notes: Notes::default(),
     })
+}
+
+/// A line saying where the program starts, as `heartburn listing` writes it: `Start at NN.` (or `Start ... cell
+/// NN`): the first word is "start", and the cell follows "at" or "cell".
+fn start_line(t: &[&str]) -> Option<usize> {
+    if !t.first()?.eq_ignore_ascii_case("start") {
+        return None;
+    }
+    t.windows(2)
+        .find(|w| w[0].eq_ignore_ascii_case("at") || w[0].eq_ignore_ascii_case("cell"))
+        .and_then(|w| address(w[1].trim_end_matches(['.', ',', ';', ')'])))
 }
 
 /// What a line of a memory listing says about its cell, past the address.
@@ -183,6 +211,8 @@ struct Cell {
     unwritten: Option<String>,
     label: Option<String>,
     instruction: Option<(usize, String)>,
+    comment: String,
+    notes: String,
 }
 
 /// An opcode, 0-9, or 10 for DATA.
@@ -220,10 +250,13 @@ fn columns(raw: &str) -> Option<Cell> {
         return None;
     }
     let (contents, unwritten) = contents(col(1)).ok()?;
+    let from = |i: usize| c.get(i..).map(|c| c.join(" ").trim().to_string()).unwrap_or_default();
     Some(Cell {
         contents,
         unwritten,
         label: (!label.is_empty()).then(|| label.to_string()),
+        comment: from(5),
+        notes: from(2),
         // HRS with no operand is HRS 00
         instruction: op(col(3)).map(|o| (o, if col(4).is_empty() { "0" } else { col(4) }.to_string())),
     })
@@ -231,7 +264,13 @@ fn columns(raw: &str) -> Option<Cell> {
 
 /// A line read word by word: the contents if the second word is one, then a label, an opcode and its operand,
 /// each optional, and the rest comment.
-fn guessed(t: &[&str]) -> Result<Cell, String> {
+fn guessed(raw: &str, t: &[&str]) -> Result<Cell, String> {
+    // the text of the line from token i on, as written
+    let rest = |i: usize| {
+        t.get(i)
+            .map(|w| raw[w.as_ptr() as usize - raw.as_ptr() as usize..].trim().to_string())
+            .unwrap_or_default()
+    };
     let mut i = 1;
     let (contents, mut unwritten) = match t.get(1) {
         Some(c) => match contents(c)? {
@@ -246,6 +285,8 @@ fn guessed(t: &[&str]) -> Result<Cell, String> {
     };
     let mut label = None;
     let mut instruction = None;
+    let notes = rest(i);
+    let mut comment = notes.clone();
     match (t.get(i), t.get(i + 1)) {
         // (after the contents, `word:` is prose: `data: CLA 97: an instruction the program changes`)
         (Some(&l), Some(&o))
@@ -253,17 +294,22 @@ fn guessed(t: &[&str]) -> Result<Cell, String> {
         {
             label = Some(l.trim_end_matches(':').to_string());
             instruction = t.get(i + 2).map(|x| (op(o).unwrap(), x.to_string()));
+            comment = rest(i + 3);
             if instruction.is_none() && contents.is_none() {
                 return Err(format!("{o} with no operand"));
             }
         }
         (Some(&o), x) if op(o).is_some() => {
             instruction = x.map(|x| (op(o).unwrap(), x.to_string()));
+            comment = rest(i + 2);
             if instruction.is_none() && contents.is_none() {
                 return Err(format!("{o} with no operand"));
             }
         }
-        (Some(&c), _) if contents.is_none() => unwritten = Some(c.to_string()),
+        (Some(&c), _) if contents.is_none() => {
+            unwritten = Some(c.to_string());
+            comment = rest(i + 1);
+        }
         _ => {}
     }
     Ok(Cell {
@@ -271,6 +317,8 @@ fn guessed(t: &[&str]) -> Result<Cell, String> {
         unwritten,
         label,
         instruction,
+        comment,
+        notes,
     })
 }
 
@@ -286,9 +334,11 @@ fn parse_memory(text: &str) -> Result<Read, String> {
         }
         Ok(())
     };
+    let mut said_start = None;
     for (n, raw) in text.lines().enumerate() {
         let t = tokens(raw);
         let Some(at) = t.first().and_then(|f| address(f)) else {
+            said_start = said_start.or_else(|| start_line(&t));
             if let [l] = t.as_slice() {
                 if let Some(l) = l.strip_suffix(':').filter(|l| is_label(l)) {
                     pending = Some((n, l.to_string()));
@@ -308,16 +358,20 @@ fn parse_memory(text: &str) -> Result<Read, String> {
                     contents: word(p[1]),
                     unwritten: None,
                     instruction: None,
+                    comment: String::new(),
+                    notes: String::new(),
                 });
             }
             continue;
         }
-        let cell = columns(raw).map_or_else(|| guessed(&t), Ok);
+        let cell = columns(raw).map_or_else(|| guessed(raw, &t), Ok);
         let Cell {
             contents,
             unwritten,
             label,
             instruction,
+            comment,
+            notes,
         } = cell.map_err(|e| format!("line {}: cell {at:02}: {e}", n + 1))?;
         if let Some((ln, l)) = pending.take() {
             define(&l, at, ln, &mut labels)?;
@@ -335,14 +389,18 @@ fn parse_memory(text: &str) -> Result<Read, String> {
             contents,
             unwritten,
             instruction,
+            comment,
+            notes,
         });
     }
     // where it starts: the first instruction, when the listing names its opcodes (Stuart's six columns: the data
     // cells come first)
-    let start = lines
-        .iter()
-        .find(|l| matches!(l.instruction, Some((o, _)) if o < 10))
-        .map(|l| l.at);
+    let start = said_start.or_else(|| {
+        lines
+            .iter()
+            .find(|l| matches!(l.instruction, Some((o, _)) if o < 10))
+            .map(|l| l.at)
+    });
     let operand = |x: &str| -> Option<i32> {
         if let Some(&a) = labels.get(x) {
             return Some(a as i32);
@@ -351,6 +409,7 @@ fn parse_memory(text: &str) -> Result<Read, String> {
     };
     let mut cells: Vec<(usize, i32)> = vec![];
     let mut unwritten = vec![];
+    let mut notes = Notes::default();
     for l in &lines {
         let assembled = match &l.instruction {
             Some((10, x)) => operand(x),
@@ -382,6 +441,17 @@ fn parse_memory(text: &str) -> Result<Read, String> {
                 continue;
             }
         };
+        // an opcode whose operand isn't one is prose: the comment is all of it
+        let said = if assembled.is_some() { &l.comment } else { &l.notes };
+        if !said.is_empty() {
+            notes.comments.retain(|c| c.0 != l.at);
+            notes.comments.push((l.at, said.clone()));
+        }
+        match (&l.instruction, assembled) {
+            (Some((10, _)), Some(_)) => notes.data.push(l.at),
+            (Some(_), Some(_)) => notes.code.push(l.at),
+            _ => {}
+        }
         if l.at == 0 && value != 1 {
             warnings.push(format!(
                 "line {}: cell 00 is wired to 001: {value:03} not loaded",
@@ -402,11 +472,14 @@ fn parse_memory(text: &str) -> Result<Read, String> {
     if cells.is_empty() {
         return Err("no cells: a listing gives each cell's address and contents".into());
     }
+    notes.labels = labels.into_iter().collect();
+    notes.labels.sort_by(|x, y| (x.1, &x.0).cmp(&(y.1, &y.0)));
     Ok(Read {
         listing: Listing::Memory(cells),
         warnings,
         unwritten,
         start,
+        notes,
     })
 }
 
@@ -437,6 +510,168 @@ pub fn deck(start: usize, cells: &[(usize, i32)]) -> Result<Vec<i32>, String> {
     }
     d.extend([2, 800 + start as i32]);
     Ok(d)
+}
+
+/// A word as a listing writes it: three digits and a sign if negative.
+fn written(w: i32) -> String {
+    if w < 0 {
+        format!("-{:03}", -w)
+    } else {
+        format!("{w:03}")
+    }
+}
+
+/// The cells the program can run, from `start`: each instruction runs on to the next, a TAC also to its address,
+/// a JMP to its address, and on to the next too when it calls a routine; HRS stops. A routine returns through
+/// cell 99, where JMP leaves the return: it reads it (CLA 99) or runs on into it, by its instructions and TACs
+/// before any JMP. Only cells `listed` are followed, and never into the loader's cells 00-02.
+fn reachable(m: &[i32; 100], listed: &[bool; 100], start: usize) -> [bool; 100] {
+    let calls = |a: usize| {
+        let mut seen = [false; 100];
+        let mut todo = vec![a];
+        while let Some(pc) = todo.pop() {
+            if pc == 99 {
+                return true;
+            }
+            if pc >= 100 || pc <= 2 || !listed[pc] || seen[pc] {
+                continue;
+            }
+            seen[pc] = true;
+            let w = m[pc];
+            match (w / 100, (w % 100) as usize) {
+                _ if w == 199 => return true,
+                _ if w < 0 => todo.push(pc + 1),
+                (3, x) => todo.extend([x, pc + 1]),
+                (8 | 9, _) => {}
+                _ => todo.push(pc + 1),
+            }
+        }
+        false
+    };
+    let mut seen = [false; 100];
+    let mut todo = vec![start];
+    while let Some(pc) = todo.pop() {
+        if pc >= 100 || pc <= 2 || !listed[pc] || seen[pc] {
+            continue;
+        }
+        seen[pc] = true;
+        let w = m[pc];
+        let (op, a) = ((w / 100) as usize, (w % 100) as usize);
+        match op {
+            _ if w < 0 => todo.push(pc + 1),
+            3 => todo.extend([a, pc + 1]),
+            8 if calls(a) => todo.extend([a, pc + 1]),
+            8 => todo.push(a),
+            9 => {}
+            _ => todo.push(pc + 1),
+        }
+    }
+    seen
+}
+
+/// A program in Brian Stuart's six columns, a tab between each, a line a cell in the order of the cells:
+/// `Address, Contents, Label, Opcode, Operand, Comment`, under a line saying where it starts. Which cells are instructions and which DATA is what `notes`
+/// says, or else what the program can run from `start` (`reachable`); an operand that is a labelled cell is
+/// written as its label. A label with no cell listed gets a line of its own, its address and its name.
+pub fn six_columns(cells: &[(usize, i32)], start: Option<usize>, notes: &Notes) -> String {
+    let m = memory(cells);
+    let mut listed = [false; 100];
+    for &(a, _) in cells {
+        listed[a] = true;
+    }
+    let mut code = start.map_or([false; 100], |s| reachable(&m, &listed, s));
+    for &a in &notes.code {
+        code[a] = true;
+    }
+    for &a in &notes.data {
+        code[a] = false;
+    }
+    let label = |a: usize| notes.labels.iter().find(|l| l.1 == a).map(|l| l.0.as_str());
+    let mut lines: Vec<(usize, String)> = vec![];
+    let mut text = start.map_or(String::new(), |s| format!("Start at {s:02}.\n\n"));
+    for &(a, w) in cells {
+        let (opcode, operand) = if code[a] && w >= 0 {
+            let (op, x) = ((w / 100) as usize, (w % 100) as usize);
+            // an address, unless it is SFT's shifts or HRS's stop
+            let named = if matches!(op, 4 | 9) { None } else { label(x) };
+            (OPS[op].to_string(), named.map_or(format!("{x:02}"), str::to_string))
+        } else {
+            ("DATA".to_string(), written(w))
+        };
+        let comment = notes.comments.iter().find(|c| c.0 == a).map_or("", |c| c.1.as_str());
+        let line = format!(
+            "{a:02}\t{}\t{}\t{opcode}\t{operand}\t{comment}",
+            written(w),
+            label(a).unwrap_or("")
+        );
+        lines.push((a, line.trim_end().to_string()));
+    }
+    for (l, a) in &notes.labels {
+        if !listed[*a] && notes.labels.iter().find(|x| x.1 == *a).map(|x| &x.0) == Some(l) {
+            lines.push((*a, format!("{a:02}\t\t{l}")));
+        }
+    }
+    lines.sort_by_key(|l| l.0);
+    for (_, l) in lines {
+        text += &l;
+        text.push('\n');
+    }
+    text
+}
+
+/// What a self-loading deck loads (`from_deck`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Loaded {
+    /// the cells, in the order loaded
+    pub cells: Vec<(usize, i32)>,
+    /// the cell the loader hands over to
+    pub start: Option<usize>,
+    /// the cards left in the reader then: its input
+    pub left: Vec<i32>,
+}
+
+/// What a self-loading deck loads: its cells, in the order loaded (a cell loaded twice keeps the later), the cell
+/// its loader hands over to, and the cards left in the reader then (its input). Found by running the loader
+/// (cells 00-02) on a cleared CARDIAC until the bug leaves it; with no start when the cards run out first (a deck
+/// that ends in the manual's BLANK card).
+pub fn from_deck(cards: &[i32]) -> Result<Loaded, String> {
+    use crate::cardiac::{Event, Machine};
+    let mut m = Machine::with_tapes(&[cards.to_vec()], &[]);
+    let mut cells: Vec<(usize, i32)> = vec![];
+    let mut start = None;
+    for _ in 0..10 * cards.len() + 10 {
+        let pc = m.pc();
+        if pc > 2 {
+            start = Some(pc);
+            break;
+        }
+        // the loader's INP in cell 01 puts the next card in the cell it names
+        let into = (pc == 1)
+            .then(|| m.cell(1))
+            .filter(|w| (3..100).contains(w))
+            .map(|w| w as usize);
+        match m.step(&mut vec![]) {
+            Event::Budget => {}
+            Event::Input => break,
+            e => {
+                return Err(format!(
+                    "not a deck that loads itself: its loader stopped ({e:?}) at cell {pc:02}"
+                ))
+            }
+        }
+        if let Some(a) = into {
+            cells.retain(|c| c.0 != a);
+            cells.push((a, m.cell(a)));
+        }
+    }
+    if start.is_none() && m.next_card().is_some() {
+        return Err("not a deck that loads itself: its loader never hands over".into());
+    }
+    Ok(Loaded {
+        cells,
+        start,
+        left: m.cards().collect(),
+    })
 }
 
 #[cfg(test)]
