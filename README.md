@@ -30,6 +30,14 @@ and after how many instructions, goes to standard error, so the output pipes cle
     579
          halted after 34 instructions
 
+Cards are always printed as numbers. For a program whose cards are characters (65 for A, 10 for a newline), pipe the
+output through perl:
+
+    burn hello.deck | perl -CO -ne 'print chr if $_ >= 0'
+
+That prints each card as the Unicode character with that number and skips negative cards. (`awk '{printf "%c", $1}'`
+also works, for 0-127 only.)
+
 ## Decks
 
 `burn` runs decks and nothing else. A deck is a program as CARDIAC loads it: plain text, one card per line (lines
