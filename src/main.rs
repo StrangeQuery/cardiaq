@@ -1,5 +1,5 @@
 //! burn: run a CARDIAC deck, and see how fast this machine runs CARDIAC. It only runs things: decks are made from
-//! listings elsewhere (CARDIAC Code's Export).
+//! listings elsewhere (CARDIAC Code's Export). A file is a deck if it looks like one: it starts with the loader.
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -17,7 +17,8 @@ burn: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast
 
 Usage:
   burn NAME.deck [-- INPUT...]
-      Run a deck: cards, one a line (lines starting with # are comments). The input is the numbers after --, or
+      Run a deck: cards, one a line (lines starting with # are comments), starting with the loader's
+      002 and 800 (whatever the file is called). The input is the numbers after --, or
       else standard input, each card read when an INP asks for it. Each card it punches is printed on a line of
       its own as it is punched. How it stopped, and after how many instructions, goes to standard error.
       A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.deck
@@ -62,8 +63,25 @@ fn stdin_cards() -> impl Iterator<Item = i32> {
     })
 }
 
+/// Whether cards look like a deck: they start with the loader's two cards, 002 and 800, as every deck does.
+fn looks_like_a_deck(deck: &Tape) -> bool {
+    deck.phases.first().is_some_and(|cards| cards.starts_with(&[2, 800]))
+}
+
 fn run(file: &str, input: Option<Vec<i32>>) {
-    let mut deck = Tape::load(Path::new(file)).unwrap_or_else(|e| die(e));
+    // what a file is, from what's in it, not its name: a deck starts with the loader
+    if !Path::new(file).is_file() {
+        die(format!("{file}: no such file"))
+    }
+    let mut deck = Tape::load(Path::new(file))
+        .ok()
+        .filter(looks_like_a_deck)
+        .unwrap_or_else(|| {
+            die(format!(
+                "{file}: not a CARDIAC deck (a deck starts with the loader's cards, 002 and 800): make one from a \
+                 listing in CARDIAC Code"
+            ))
+        });
     let dir = Path::new(file)
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -124,13 +142,10 @@ fn main() {
         [c] if c == "bench" && after.is_none() => bench(),
         [c] if c == "help" || c == "--help" || c == "-h" => print!("{}", usage()),
         [f] if f.starts_with('-') => bad_usage(&format!("unknown option {f}")),
-        [f] if Path::new(f).extension().and_then(|e| e.to_str()) == Some("deck") => {
+        [f] => {
             let input = after.map(|a| values(&a.join(" ")).unwrap_or_else(|e| bad_usage(&e)));
             run(f, input)
         }
-        [f] => bad_usage(&format!(
-            "{f}: burn runs decks (NAME.deck); make one from a listing in CARDIAC Code"
-        )),
         [] => {
             eprint!("{}", usage());
             std::process::exit(2)

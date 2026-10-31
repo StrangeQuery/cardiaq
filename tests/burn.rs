@@ -1,4 +1,4 @@
-//! `burn`: it runs decks and nothing else. A deck made of a listing (by heartburn-tools, as CARDIAC Code's Export
+//! `burn`: it runs decks and nothing else, a deck known by what's in it (the loader's 002, 800), not its name. A deck made of a listing (by heartburn-tools, as CARDIAC Code's Export
 //! makes one) runs; a program in two decks goes on into NAME.2.deck; input comes after -- or on standard input;
 //! a listing is refused.
 use std::io::Write;
@@ -77,9 +77,28 @@ fn burn_goes_on_into_the_next_deck() {
 }
 
 #[test]
-fn burn_refuses_what_isnt_a_deck() {
+fn burn_looks_inside_not_at_the_name() {
+    // a listing is refused for what it is, not for its name
     let (ok, _, said) = burn(&["tests/manual/add.cardiac"], "");
-    assert!(!ok && said.contains("burn runs decks"), "{said}");
+    assert!(!ok && said.contains("not a CARDIAC deck"), "{said}");
+    // a deck runs whatever it is called
+    let d = dir("names");
+    let odd = d.join("add.cards");
+    tools(&[
+        "deck",
+        "tests/manual/add.cardiac",
+        "--start",
+        "17",
+        "-o",
+        odd.to_str().unwrap(),
+    ]);
+    let (ok, printed, said) = burn(&[odd.to_str().unwrap(), "--", "1", "2"], "");
+    assert!(ok && printed == "3\n", "{printed} {said}");
+    // cards that don't start with the loader aren't a deck
+    let bare = d.join("bare.deck");
+    std::fs::write(&bare, "100\n200\n").unwrap();
+    let (ok, _, said) = burn(&[bare.to_str().unwrap()], "");
+    assert!(!ok && said.contains("not a CARDIAC deck"), "{said}");
     let (ok, printed, _) = burn(&["bench", "--", "1"], "");
     assert!(!ok && printed.is_empty());
 }

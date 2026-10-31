@@ -9,10 +9,45 @@ standard CARDIAC, exactly as the manual and Brian Stuart's simulator define it, 
 to go. That is the premise: nothing a program can see differs from the cardboard machine, and everything it can't
 see is tuned.
 
+[Install](#install) • [Quick start](#quick-start) • [Decks](#decks) • [How fast](#how-fast) • [As a library](#as-a-library)
+
+## Install
+
+    cargo install heartburn
+
+This installs one command, `burn`.
+
+## Quick start
+
+    burn add.deck -- 123 456      # input after --
+    echo 123 456 | burn add.deck  # or on standard input, each card read when an INP asks for it
+    burn bench                    # how fast this machine runs CARDIAC
+
+`burn` runs a deck and prints each card the program punches, on a line of its own, as it is punched. How it stopped,
+and after how many instructions, goes to standard error, so the output pipes cleanly:
+
+    $ burn add.deck -- 123 456
+    579
+         halted after 34 instructions
+
+## Decks
+
+`burn` runs decks and nothing else. A deck is a program as CARDIAC loads it: plain text, one card per line (lines
+starting with `#` are comments): the two-card loader, 002 and 800; an address card and a value card for each cell;
+then the pair 002 8xx that starts the program at xx. Any CARDIAC simulator can load one. `burn` knows a deck by what
+is in it, the loader's cards first, not by its name; by convention it is `NAME.deck`.
+
+To make a deck, write the program as a listing in [CARDIAC Code](https://lab.strangequery.com/cardiac/code/), the
+CARDIAC IDE in your browser, and press Export: `NAME.cardiac` becomes `NAME.deck`.
+
+A program too big for memory comes in several decks: `NAME.deck`, `NAME.2.deck`, and so on. A deck stops with the
+PC on the number of the deck to load next (HRS n; on 00 it is done), and the operator, here `burn`, puts that deck in
+the reader and starts the loader at 00: any deck, in any order, as often as asked.
+
 ## How fast
 
-`heartburn bench` runs three countdown loops, one inside another (626.5 million instructions). On an Apple M5 Ultra,
-the same program on the CARDIAC emulators that could be built and run here (October 2026):
+`burn bench` runs three countdown loops, one inside another (626.5 million instructions), on one core. On an Apple
+M5 Ultra, the same program on the CARDIAC emulators that could be built and run here (October 2026):
 
 | emulator                          | language   | million instructions a second | per instruction |
 |-----------------------------------|------------|-------------------------------|-----------------|
@@ -21,6 +56,9 @@ the same program on the CARDIAC emulators that could be built and run here (Octo
 | fzaca/CardiacVisualizer           | Rust       | 110                           | 9.1 ns          |
 | weibell/python-cardiac-emu        | Python 3.9 | 2.4                           | 417 ns          |
 | rzinkstok/cardiac                 | Python 3.9 | 1.25                          | 800 ns          |
+
+That is per core: a CARDIAC program is one instruction after another, so one run uses one core, and separate runs
+go side by side on as many cores as the machine has.
 
 On real programs, 109 compiled CARDIAC machines (4.5 billion instructions, every card checked against the same
 programs compiled natively), it runs about 760 million a second: 8 times slower than native Rust doing the
@@ -34,31 +72,6 @@ already decoded; a 101st decoded cell sends the bug round to 00, so no step chec
 where a run stopped, is a compile-time switch that costs nothing when it is off; the loop allocates nothing.
 Where it goes next: fewer cycles a step, and the idioms CARDIAC code is made of (an indexed load is four
 instructions of self-modifying code) done as one. No JIT: an interpreter, as fast as one can be made to go.
-
-## Install
-
-    cargo install heartburn
-
-## Use
-
-    heartburn run hello.tape            # each card punched, as it is punched
-    heartburn run gcd.tape -- 252 105   # input after --, else standard input, read as INP asks
-    heartburn run add.txt --start 17 -- 123 456   # a listing, written straight into memory
-    heartburn tape prog.lst             # a listing to a tape that loads itself: prog.tape
-    heartburn listing prog.tape         # a tape, CARDIASM or any listing in six columns: prog.lst
-    heartburn cardiasm prog.cardiasm    # Jason Whittington's CARDIASM to a deck: prog.cardimg
-    heartburn bench
-
-A listing is a program as the 1968 manual or Brian Stuart's page prints it: the first two numbers on a line are the
-address and the contents, and the rest is comment, so a program copied out of the book runs as it is. Stuart's six
-columns (Address, Contents, Label, Opcode, Operand, Comment) work out a cell's contents from its opcode and operand
-when they are missing. `--start` says where to start, as the manual does in prose.
-
-A `.tape` is a plain deck, one card per line, that any CARDIAC player loads: the two-card loader, an address and a
-value for each cell, and the pair 002 8xx that starts the program. A program too big for memory comes in tapes,
-`NAME.tape`, `NAME.2.tape`, and so on. A tape stops with the bug on the number of the tape to load next (HRS n; on 00
-it is done), and the operator, here HEARTBURN, puts that tape in the reader and starts the loader at 00: any tape,
-in any order, as often as asked.
 
 ## As a library
 
@@ -79,7 +92,8 @@ cost nothing per instruction, and a plain run doesn't pay for any of it.
 
 ## WebAssembly
 
-`wasm/` builds HEARTBURN for a web page: the `Machine` behind a plain C API, no dependencies.
+`wasm/` builds HEARTBURN for a web page: the `Machine` behind a plain C API, no dependencies. It is the engine
+inside CARDIAC Code.
 
     rustup target add wasm32-unknown-unknown    # once
     cd wasm && cargo build --release --lib --target wasm32-unknown-unknown
