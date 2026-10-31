@@ -7,7 +7,7 @@ use heartburn::cardiac;
 use heartburn::listing::{self, Listing, Notes, Read};
 
 fn heartburn(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_heartburn"))
+    let out = Command::new(env!("CARGO_BIN_EXE_heartburn-tools"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(args)
         .output()
@@ -50,8 +50,8 @@ fn the_manuals_programs_in_six_columns() {
         ("double-precision-add", "50", vec!["163", "742", "258", "500"]),
         ("nim", "01", vec![]),
     ] {
-        let src = format!("tests/manual/{name}.txt");
-        let out = d.join(format!("{name}.lst"));
+        let src = format!("tests/manual/{name}.cardiac");
+        let out = d.join(format!("{name}.cardiac"));
         heartburn(&["listing", &src, "--start", start, "-o", out.to_str().unwrap()]);
         let (was, now) = (read(Path::new(&src)), read(&out));
         assert_eq!(cells(&now), cells(&was), "{name}");
@@ -65,7 +65,7 @@ fn the_manuals_programs_in_six_columns() {
         args.extend(&input);
         assert_eq!(heartburn(&args), printed, "{name}");
     }
-    let six = std::fs::read_to_string(d.join("reverse.lst")).unwrap();
+    let six = std::fs::read_to_string(d.join("reverse.cardiac")).unwrap();
     assert!(
         six.contains("15\t039\t\tINP\t39\tRead \"abc\" into cell 39.\n"),
         "{six}"
@@ -78,21 +78,21 @@ fn the_manuals_programs_in_six_columns() {
 fn tapes_to_listings_and_back() {
     let d = dir("tapes");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    heartburn(&["tape", "tests/sortem/sortem-1.lst", "-o", &t("sortem.tape")]);
-    heartburn(&["tape", "tests/sortem/sortem-2.lst", "-o", &t("sortem.2.tape")]);
-    heartburn(&["listing", &t("sortem.tape"), "-o", &t("again.lst")]);
-    assert!(d.join("again.2.lst").is_file());
-    heartburn(&["tape", &t("again.lst"), "-o", &t("again.tape")]);
-    heartburn(&["tape", &t("again.2.lst"), "-o", &t("again.2.tape")]);
+    heartburn(&["deck", "tests/sortem/sortem-1.cardiac", "-o", &t("sortem.deck")]);
+    heartburn(&["deck", "tests/sortem/sortem-2.cardiac", "-o", &t("sortem.2.deck")]);
+    heartburn(&["listing", &t("sortem.deck"), "-o", &t("again.cardiac")]);
+    assert!(d.join("again.2.cardiac").is_file());
+    heartburn(&["deck", &t("again.cardiac"), "-o", &t("again.deck")]);
+    heartburn(&["deck", &t("again.2.cardiac"), "-o", &t("again.2.deck")]);
     let input: Vec<String> = (1..=35).rev().map(|n| n.to_string()).collect();
     let run = |tape: &str| {
         let mut args = vec!["run", tape, "--"];
         args.extend(input.iter().map(String::as_str));
         heartburn(&args)
     };
-    assert_eq!(run(&t("again.tape")), run(&t("sortem.tape")));
+    assert_eq!(run(&t("again.deck")), run(&t("sortem.deck")));
     // the same cards, too, the cells in the order of their addresses (the sortem listings list them so)
-    for n in ["sortem.tape", "sortem.2.tape"] {
+    for n in ["sortem.deck", "sortem.2.deck"] {
         let again = n.replace("sortem", "again");
         assert_eq!(
             std::fs::read_to_string(d.join(again)).unwrap(),
@@ -100,7 +100,7 @@ fn tapes_to_listings_and_back() {
         );
     }
     // data stays data: phase 2's variables
-    let two = std::fs::read_to_string(d.join("again.2.lst")).unwrap();
+    let two = std::fs::read_to_string(d.join("again.2.cardiac")).unwrap();
     assert!(two.contains("36\t035\t\tDATA\t035\n"), "{two}");
 }
 
@@ -155,7 +155,7 @@ fn cardiasm_keeps_its_names() {
         "DEF a 0\nDEF b 0\nstart: INP a\nINP b\nCLA a\nADD b\nSTO a\nOUT a\nHRS 0\n",
     )
     .unwrap();
-    let out = d.join("add.lst");
+    let out = d.join("add.cardiac");
     heartburn(&["listing", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
     let six = std::fs::read_to_string(&out).unwrap();
     assert!(six.starts_with("Start at 03.\n"), "{six}");

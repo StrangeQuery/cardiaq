@@ -15,13 +15,22 @@ name = "heartburn"
 path = "src/lib.rs"
 
 [[bin]]
-name = "heartburn"
+name = "burn"
 path = "src/main.rs"
+
+# The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Not installed by
+# `cargo install heartburn` (it needs the feature); the tests build it.
+[[bin]]
+name = "heartburn-tools"
+path = "src/bin/tools.rs"
+required-features = ["tools"]
 
 [features]
 # Marks a debugger page draws from (cells run, cells used as data, the last instruction): heartburn.wasm turns it
 # on; native HEARTBURN is built without it, its machine exactly as fast as before.
 marks = []
+# heartburn-tools, the toolchain's commands (see [[bin]] above)
+tools = []
 
 [profile.release]
 debug = false
