@@ -242,7 +242,7 @@ fn a_profile_counts_runs_writes_and_what_never_ran() {
 
 #[test]
 fn a_deck_is_loaded_by_its_loader_and_disassembled() {
-    let deck = dir("deck").join("add.deck");
+    let deck = dir("deck").join("add.cqb");
     let (ok, _, said) = run(
         env!("CARGO_BIN_EXE_carc"),
         &[

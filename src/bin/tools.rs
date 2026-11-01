@@ -14,15 +14,15 @@ const LIMIT: u64 = 1_000_000_000;
 
 fn usage() -> &'static str {
     "\
-heartburn-tools: the CARDIAC toolchain (decks are NAME.deck, listings NAME.cq)
+heartburn-tools: the CARDIAC toolchain (decks are NAME.cqb, listings NAME.cq)
 
 Usage:
-  heartburn-tools run NAME.deck [-- INPUT...]
+  heartburn-tools run NAME.cqb [-- INPUT...]
   heartburn-tools run NAME.cardimg [-- INPUT...]
       Run a deck: plain cards, one a line. A program in phases is fed its tapes as it asks for them:
-      when it stops with the bug on n (HRS n), NAME.n.deck beside it goes in the reader and it starts again at 00.
+      when it stops with the bug on n (HRS n), NAME.n.cqb beside it goes in the reader and it starts again at 00.
       Each card it punches is printed on a line of its own as it is punched. The input is the numbers after --, or
-      else standard input, each card read when an INP asks for it. A resource slot (NAME.deck.meta) is filled from
+      else standard input, each card read when an INP asks for it. A resource slot (NAME.cqb.meta) is filled from
       resources/NAME beside it. How it stopped, and after how many instructions, goes to standard error.
   heartburn-tools run LISTING... [--start NN] [-- INPUT...]
       Run a listing as the 1968 manual or Brian Stuart's page prints it: the first two numbers on a line are the
@@ -31,8 +31,8 @@ Usage:
       first cell with an opcode other than DATA), or else at the first cell listed. More listings load over the first, as the manual loads a program and then its tables. A deck listed card by card
       (INPUT CARD  CONTENTS) is read in by its loader; at its BLANK card the operator starts it at NN.
   heartburn-tools deck LISTING... [--start NN] [-o OUT]
-      A listing to a deck that loads itself and starts at NN (or where run would start it): FILE.deck, or OUT
-      (NAME.2.deck for a program's deck 2).
+      A listing to a deck that loads itself and starts at NN (or where run would start it): FILE.cqb, or OUT
+      (NAME.2.cqb for a program's deck 2).
   heartburn-tools listing FILE... [--start NN] [-o OUT]
       A program in Brian Stuart's six columns, Address, Contents, Label, Opcode, Operand, Comment, a tab between
       each, under a line saying where it starts: FILE.cq, or OUT. From a deck (each of its decks: NAME.cq,
@@ -83,7 +83,7 @@ fn stdin_cards() -> impl Iterator<Item = i32> {
 fn is_tape(file: &str) -> bool {
     matches!(
         Path::new(file).extension().and_then(|e| e.to_str()),
-        Some("deck" | "cardimg")
+        Some("cqb" | "cardimg")
     )
 }
 
@@ -226,7 +226,7 @@ fn tape(files: &[String], start: Option<usize>, output: Option<&str>) {
     let out = output
         .map(Path::new)
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| Path::new(&files[0]).with_extension("deck"));
+        .unwrap_or_else(|| Path::new(&files[0]).with_extension("cqb"));
     std::fs::write(&out, Tape::deck_text(&cards)).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
     eprintln!("{}: {} cards", out.display(), cards.len());
 }

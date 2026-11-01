@@ -1,5 +1,5 @@
 //! `burn`: it runs decks and nothing else, a deck known by what's in it (the loader's 002, 800), not its name. A deck made of a listing (by heartburn-tools, as CARDIAC Code's Export
-//! makes one) runs; a program in two decks goes on into NAME.2.deck; input comes after -- or on standard input;
+//! makes one) runs; a program in two decks goes on into NAME.2.cqb; input comes after -- or on standard input;
 //! a listing is refused.
 use std::io::Write;
 use std::path::PathBuf;
@@ -46,7 +46,7 @@ fn burn(args: &[&str], stdin: &str) -> (bool, String, String) {
 #[test]
 fn burn_runs_a_deck_with_input_after_dashes_or_piped() {
     let d = dir("add");
-    let deck = d.join("add.deck");
+    let deck = d.join("add.cqb");
     tools(&[
         "deck",
         "tests/manual/add.cq",
@@ -66,10 +66,10 @@ fn burn_runs_a_deck_with_input_after_dashes_or_piped() {
 fn burn_goes_on_into_the_next_deck() {
     let d = dir("sortem");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    tools(&["deck", "tests/sortem/sortem-1.cq", "-o", &t("sortem.deck")]);
-    tools(&["deck", "tests/sortem/sortem-2.cq", "-o", &t("sortem.2.deck")]);
+    tools(&["deck", "tests/sortem/sortem-1.cq", "-o", &t("sortem.cqb")]);
+    tools(&["deck", "tests/sortem/sortem-2.cq", "-o", &t("sortem.2.cqb")]);
     let input: String = (1..=35).rev().map(|n| format!("{n} ")).collect();
-    let (ok, printed, said) = burn(&[&t("sortem.deck")], &input);
+    let (ok, printed, said) = burn(&[&t("sortem.cqb")], &input);
     assert!(ok, "{said}");
     let cards: Vec<i32> = printed.lines().map(|l| l.parse().unwrap()).collect();
     assert_eq!(&cards[..35], (1..=35).collect::<Vec<_>>().as_slice(), "sorted");
@@ -95,7 +95,7 @@ fn burn_looks_inside_not_at_the_name() {
     let (ok, printed, said) = burn(&[odd.to_str().unwrap(), "--", "1", "2"], "");
     assert!(ok && printed == "3\n", "{printed} {said}");
     // cards that don't start with the loader aren't a deck
-    let bare = d.join("bare.deck");
+    let bare = d.join("bare.cqb");
     std::fs::write(&bare, "100\n200\n").unwrap();
     let (ok, _, said) = burn(&[bare.to_str().unwrap()], "");
     assert!(!ok && said.contains("not a CARDIAC deck"), "{said}");
@@ -123,7 +123,7 @@ fn burn_status(args: &[&str], stdin: &str) -> (i32, String, String) {
 }
 
 fn add_deck(test: &str) -> String {
-    let deck = dir(test).join("add.deck");
+    let deck = dir(test).join("add.cqb");
     tools(&[
         "deck",
         "tests/manual/add.cq",
@@ -155,7 +155,7 @@ fn command_line_mistakes_exit_2_and_a_deck_that_cant_run_1() {
     let deck = add_deck("mistakes");
     for (args, why) in [
         (&["--frob"][..], "unrecognized option '--frob'".to_string()),
-        (&["-x", "a.deck"], "invalid option -- 'x'".to_string()),
+        (&["-x", "a.cqb"], "invalid option -- 'x'".to_string()),
         (&[], "missing deck operand".to_string()),
         (&["bench", "--", "1"], "extra operand '--'".to_string()),
         (
@@ -167,10 +167,10 @@ fn command_line_mistakes_exit_2_and_a_deck_that_cant_run_1() {
         assert_eq!((code, printed.as_str()), (2, ""), "{args:?}");
         assert_eq!(said, format!("burn: {why}\nTry 'burn --help' for more information.\n"));
     }
-    let (code, _, said) = burn_status(&["nowhere.deck"], "");
+    let (code, _, said) = burn_status(&["nowhere.cqb"], "");
     assert_eq!(
         (code, said.as_str()),
-        (1, "burn: nowhere.deck: No such file or directory\n")
+        (1, "burn: nowhere.cqb: No such file or directory\n")
     );
     let (code, _, said) = burn_status(&["tests"], "");
     assert_eq!((code, said.as_str()), (1, "burn: tests: Is a directory\n"));

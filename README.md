@@ -38,7 +38,7 @@ in your browser. Cardigan is built on a WebAssembly build of the `heartburn` lib
 
 | | | like |
 |---|---|---|
-| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cq`) into decks (`NAME.deck`) | `gcc`, `as` |
+| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc`, `as` |
 | [`burn`](#burn) | the runtime: runs compiled deck in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | Debugger and profiler. | `gdb`, `perf` |
 | [`heartburn`](#as-a-library) | the Rust library under all three: the machine, the assembler, decks | |
@@ -90,11 +90,11 @@ A program that counts down from 5 in this format. Save it as `countdown.cq`:
 (The file name doesn't really matter; `.cq` is just a convention in this SDK.)
 
 
-**Assemble it.** `carc` writes `countdown.deck` beside it:
+**Assemble it.** `carc` writes `countdown.cqb` beside it:
 
     $ carc countdown.cq
-    $ cat countdown.deck
-    # countdown.deck: countdown.cq on cards, for the loader; it starts at 10
+    $ cat countdown.cqb
+    # countdown.cqb: countdown.cq on cards, for the loader; it starts at 10
     # CARDIAC cards, one per line, read from the top. The program's input goes after them.
     002
     800
@@ -112,7 +112,7 @@ program that is cell 10.
 
 **Run it.**
 
-    $ burn countdown.deck
+    $ burn countdown.cqb
     5
     4
     3
@@ -205,9 +205,9 @@ instructions. That is what `ekg`'s `watch` is for.
 
 `carc` is the assembler: it makes a listing into a deck.
 
-    carc countdown.cq                             # writes countdown.deck beside it
-    carc --start-at=10 -o out.deck countdown.cq   # options before or after the file
-    carc - < countdown.cq | burn -                # the listing from standard input, the deck to standard output
+    carc countdown.cq                           # writes countdown.cqb beside it
+    carc --start-at=10 -o out.cqb countdown.cq  # options before or after the file
+    carc - < countdown.cq | burn -              # the listing from standard input, the deck to standard output
 
 **Listings.** A listing has a cell a line, in Brian Stuart's six columns, `ADDRESS CONTENTS LABEL OPCODE OPERAND
 COMMENT`, or the manual's `ADDRESS CONTENTS COMMENT`. The contents may be left out, and are then worked out from the
@@ -222,7 +222,7 @@ errors. Contents that disagree with the opcode and operand are a warning: the co
 
 | | |
 |---|---|
-| `-o`, `--output=FILE` | write the deck to FILE (`-` for standard output); by default `NAME.deck` beside `NAME.cq`, or standard output for a listing read from standard input |
+| `-o`, `--output=FILE` | write the deck to FILE (`-` for standard output); by default `NAME.cqb` beside `NAME.cq`, or standard output for a listing read from standard input |
 | `--start-at=NN` | start the program at cell NN |
 | `-h`, `--help` | display help and exit |
 | `--version` | output version information and exit |
@@ -234,11 +234,11 @@ mistake on the command line.
 
 `burn` is the runtime, the fastest CARDIAC emulator on the planet today.
 
-    burn countdown.deck              # run a deck
-    burn add.deck -- 123 456         # input cards after the deck (the -- is optional)
-    echo 123 456 | burn add.deck     # or on standard input, each card read when an INP asks for it
-    carc - < add.cq | burn -    # the deck itself from standard input
-    burn bench                       # run diagnostics for how fast this machine runs CARDIAC
+    burn countdown.cqb           # run a deck
+    burn add.cqb -- 123 456      # input cards after the deck (the -- is optional)
+    echo 123 456 | burn add.cqb  # or on standard input, each card read when an INP asks for it
+    carc - < add.cq | burn -     # the deck itself from standard input
+    burn bench                   # run diagnostics for how fast this machine runs CARDIAC
 
 **Decks.** A deck is plain text, one card per line (lines starting with `#` are comments). There is no auto-loader,
 so decks must provide their own loading logic as documented on [Brian Stuart's page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html).
@@ -247,9 +247,9 @@ so decks must provide their own loading logic as documented on [Brian Stuart's p
 many instructions, goes to standard error. For a program whose output values are characters (65 for A, 10 for a
 newline), pipe the output through perl:
 
-    burn hello.deck | perl -CO -ne 'print chr if $_ >= 0'
+    burn hello.cqb | perl -CO -ne 'print chr if $_ >= 0'
 
-**Programs in several decks.** A program too big for memory comes as `NAME.deck`, `NAME.2.deck`, and so on. A deck
+**Programs in several decks.** A program too big for memory comes as `NAME.cqb`, `NAME.2.cqb`, and so on. A deck
 stops with the PC on the number of the deck to load next (HRS n; on 00 it is done), and `burn`, as the operator
 would, puts that deck in the reader and starts the loader at 00: any deck, in any order, as often as asked.
 
@@ -268,9 +268,9 @@ or ran out of cards, 1 if the deck can't be read or the program never stops (a r
 kept) or a deck (loaded by its own loader, as `burn` loads it, and disassembled), told apart by what is in it, and the
 program's input after it:
 
-    ekg countdown.cq                          # debug, at the (ekg) prompt
+    ekg countdown.cq             # debug, at the (ekg) prompt
     ekg --batch mul.cq -x 'break 17' -x run -x 'p p' -- 6 7
-    ekg --profile mul.cq -- 6 7               # run it to the end and report where the instructions went
+    ekg --profile mul.cq -- 6 7  # run it to the end and report where the instructions went
 
 **Debugging.** The commands are gdb's where gdb has one. A PLACE is a cell (00-99), a label, or `label+N`.
 

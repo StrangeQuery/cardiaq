@@ -26,7 +26,7 @@ whatever the file is called; carc makes one from a listing. With DECK -, the dec
 The program's input is the INPUT numbers after DECK, if there are any or a --, or else standard input, each card
 read when an INP asks for it. Each card it punches is printed on a line of its own as it is punched. How it
 stopped, and after how many instructions, goes to standard error.
-A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.deck beside it
+A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.cqb beside it
 goes in the reader and it starts again at 00.
 
 burn bench: how fast this machine runs CARDIAC, three nested countdown loops, 626.5 million instructions. (A deck

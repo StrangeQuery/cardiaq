@@ -24,7 +24,7 @@ The deck is the loader's 002 and 800, an address card and a contents card for ea
 the program at NN: where --start-at says, or else where the listing says (a \"Start at NN.\" line, the line labelled
 start, its first instruction).
 
-  -o, --output=FILE  write the deck to FILE (- for standard output); by default NAME.deck beside
+  -o, --output=FILE  write the deck to FILE (- for standard output); by default NAME.cqb beside
                        NAME.cq, or standard output for a listing read from standard input
       --start-at=NN  start the program at cell NN
   -h, --help         display this help and exit
@@ -85,7 +85,7 @@ fn carc(file: &str, out: Option<&str>, start: Option<usize>) {
     let deck = match out {
         Some(o) => o.to_string(),
         None if file == "-" => "-".to_string(),
-        None => Path::new(file).with_extension("deck").to_string_lossy().into_owned(),
+        None => Path::new(file).with_extension("cqb").to_string_lossy().into_owned(),
     };
     let name = |p: &str| {
         Path::new(p)

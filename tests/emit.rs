@@ -78,21 +78,21 @@ fn the_manuals_programs_in_six_columns() {
 fn tapes_to_listings_and_back() {
     let d = dir("tapes");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    heartburn(&["deck", "tests/sortem/sortem-1.cq", "-o", &t("sortem.deck")]);
-    heartburn(&["deck", "tests/sortem/sortem-2.cq", "-o", &t("sortem.2.deck")]);
-    heartburn(&["listing", &t("sortem.deck"), "-o", &t("again.cq")]);
+    heartburn(&["deck", "tests/sortem/sortem-1.cq", "-o", &t("sortem.cqb")]);
+    heartburn(&["deck", "tests/sortem/sortem-2.cq", "-o", &t("sortem.2.cqb")]);
+    heartburn(&["listing", &t("sortem.cqb"), "-o", &t("again.cq")]);
     assert!(d.join("again.2.cq").is_file());
-    heartburn(&["deck", &t("again.cq"), "-o", &t("again.deck")]);
-    heartburn(&["deck", &t("again.2.cq"), "-o", &t("again.2.deck")]);
+    heartburn(&["deck", &t("again.cq"), "-o", &t("again.cqb")]);
+    heartburn(&["deck", &t("again.2.cq"), "-o", &t("again.2.cqb")]);
     let input: Vec<String> = (1..=35).rev().map(|n| n.to_string()).collect();
     let run = |tape: &str| {
         let mut args = vec!["run", tape, "--"];
         args.extend(input.iter().map(String::as_str));
         heartburn(&args)
     };
-    assert_eq!(run(&t("again.deck")), run(&t("sortem.deck")));
+    assert_eq!(run(&t("again.cqb")), run(&t("sortem.cqb")));
     // the same cards, too, the cells in the order of their addresses (the sortem listings list them so)
-    for n in ["sortem.deck", "sortem.2.deck"] {
+    for n in ["sortem.cqb", "sortem.2.cqb"] {
         let again = n.replace("sortem", "again");
         assert_eq!(
             std::fs::read_to_string(d.join(again)).unwrap(),

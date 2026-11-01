@@ -29,7 +29,7 @@ fn carc(args: &[&str]) -> (bool, String, String) {
 
 #[test]
 fn carc_makes_a_deck_burn_runs() {
-    let deck = dir("add").join("add.deck");
+    let deck = dir("add").join("add.cqb");
     let (ok, _, said) = carc(&[
         "tests/manual/add.cq",
         "--start-at",
@@ -40,7 +40,7 @@ fn carc_makes_a_deck_burn_runs() {
     assert!(ok && said.is_empty(), "{said}");
     let text = std::fs::read_to_string(&deck).unwrap();
     assert!(
-        text.starts_with("# add.deck: add.cq on cards, for the loader; it starts at 17\n"),
+        text.starts_with("# add.cqb: add.cq on cards, for the loader; it starts at 17\n"),
         "{text}"
     );
     assert!(
@@ -59,13 +59,13 @@ fn carc_makes_a_deck_burn_runs() {
 fn burn_goes_on_into_the_second_deck_carc_made() {
     let d = dir("sortem");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    for (listing, deck) in [("sortem-1", "sortem.deck"), ("sortem-2", "sortem.2.deck")] {
+    for (listing, deck) in [("sortem-1", "sortem.cqb"), ("sortem-2", "sortem.2.cqb")] {
         let (ok, _, said) = carc(&[&format!("tests/sortem/{listing}.cq"), "-o", &t(deck)]);
         assert!(ok, "{said}");
     }
-    assert!(std::fs::read_to_string(t("sortem.deck")).unwrap().starts_with('#'));
+    assert!(std::fs::read_to_string(t("sortem.cqb")).unwrap().starts_with('#'));
     let input: Vec<String> = (1..=35).rev().map(|n| n.to_string()).collect();
-    let mut args = vec![t("sortem.deck"), "--".to_string()];
+    let mut args = vec![t("sortem.cqb"), "--".to_string()];
     args.extend(input);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let (ok, printed, said) = run(env!("CARGO_BIN_EXE_burn"), &args);
@@ -82,7 +82,7 @@ fn the_deck_goes_beside_the_listing_and_starts_where_it_says() {
     std::fs::write(&listing, "; Start at 10.\n10 start OUT n\n11 HRS 00\n30 n DATA 5\n").unwrap();
     let (ok, _, said) = carc(&[listing.to_str().unwrap()]);
     assert!(ok, "{said}");
-    let deck = std::fs::read_to_string(d.join("count.deck")).unwrap();
+    let deck = std::fs::read_to_string(d.join("count.cqb")).unwrap();
     assert!(
         deck.ends_with("\n002\n800\n010\n530\n011\n900\n030\n005\n002\n810\n"),
         "{deck}"
@@ -107,7 +107,7 @@ fn errors_are_reported_and_no_deck_is_written() {
         "{said}"
     );
     assert!(!said.contains(":2:"), "{said}");
-    assert!(!d.join("bad.deck").exists());
+    assert!(!d.join("bad.cqb").exists());
     // a warning alone doesn't stop it
     std::fs::write(&listing, "10 199 CLA 20\n20 DATA 1\n").unwrap();
     let (ok, _, said) = carc(&[listing.to_str().unwrap()]);
@@ -122,7 +122,7 @@ fn errors_are_reported_and_no_deck_is_written() {
 fn every_manual_listing_assembles() {
     for f in std::fs::read_dir("tests/manual").unwrap() {
         let p = f.unwrap().path();
-        let out = dir("manual").join(p.file_name().unwrap()).with_extension("deck");
+        let out = dir("manual").join(p.file_name().unwrap()).with_extension("cqb");
         let (ok, _, said) = carc(&[p.to_str().unwrap(), "-o", out.to_str().unwrap()]);
         assert!(ok && !said.contains("error"), "{}: {said}", p.display());
     }
@@ -199,20 +199,20 @@ fn options_long_short_bundled_or_after_the_file() {
     let add = "tests/manual/add.cq".to_string();
     for (n, args) in [
         (
-            "a.deck",
+            "a.cqb",
             vec![
                 add.clone(),
                 "--start-at=17".into(),
-                format!("--output={}", out("a.deck")),
+                format!("--output={}", out("a.cqb")),
             ],
         ),
         (
-            "b.deck",
-            vec!["--start-at=17".into(), "-o".into(), out("b.deck"), add.clone()],
+            "b.cqb",
+            vec!["--start-at=17".into(), "-o".into(), out("b.cqb"), add.clone()],
         ),
         (
-            "c.deck",
-            vec!["--st".into(), "17".into(), add.clone(), format!("-o{}", out("c.deck"))],
+            "c.cqb",
+            vec!["--st".into(), "17".into(), add.clone(), format!("-o{}", out("c.cqb"))],
         ),
     ] {
         let a: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -228,7 +228,7 @@ fn options_long_short_bundled_or_after_the_file() {
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert!(d.join("-odd.deck").exists());
+    assert!(d.join("-odd.cqb").exists());
 }
 
 #[test]
