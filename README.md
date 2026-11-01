@@ -1,6 +1,6 @@
 # cardiaq
 
-Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a runtime and a debugger
+Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a debugger, and a _stupid_ fast runtime. 
 
 [CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation)
 (the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman) was a computer you
