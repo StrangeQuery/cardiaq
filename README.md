@@ -14,9 +14,15 @@ see is tuned.
 
 ## Install
 
-    cargo install heartburn
+Prebuilt `burn`, `carc` and `ekg` for macOS, Linux and Windows come with the first release, through Homebrew,
+winget and the [releases](https://github.com/StrangeQuery/cardiaq/releases). Until then, build them from source,
+with [Rust](https://rustup.rs) installed:
 
-This installs one command, `burn`.
+    git clone https://github.com/StrangeQuery/cardiaq
+    cd cardiaq
+    cargo build --release
+
+The three commands are then in `target/release/`; put them on your PATH.
 
 ## Quick start
 
