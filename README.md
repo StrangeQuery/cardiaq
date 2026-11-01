@@ -9,17 +9,17 @@ carc countdown.cq     # compiles to countdown.cqb
 burn countdown.cqb    # runs it in the fast emulator
 ```
 
+## CARDIAC
+
 [CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation)
-(the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman) was a computer you
-worked by hand: 100 cells of three decimal digits, a four-digit accumulator, ten instructions, all worked on
-strips of paper.
+(the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman), the classic paper computer.
 
 <p align="center"><img src="assets/cardiac.jpg" alt="A CARDIAC: the cardboard computer, its slides pulled out" width="360"></p>
 
-cardiaq is a modern toolkit for writing, debugging, and running CARDIAC programs on a real computer.
-Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
+**cardiaq** is an SDK for writing, debugging, and running CARDIAC programs on contemporary hardware.
+Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per core on a Mac Studio (Apple M5 Ultra).
 
-[What you can do](#what-you-can-do-with-this-sdk) • [Cardigan](#cardigan) • [What's in it](#whats-in-this-repo) •
+[What you can do](#what-you-can-do-with-this-sdk) • [Cardigan](#want-an-ide) • [What's in it](#whats-in-this-repo) •
 [Install](#install) • [Walkthrough](#walkthrough) • [CARDIAC in one page](#cardiac-in-one-page) • [carc](#carc) •
 [burn](#burn) • [ekg](#ekg) • [How fast](#how-fast) • [As a library](#as-a-library)
 
@@ -28,7 +28,7 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 - **Write CARDIAC programs** as listings using the six-column format from the 1968 manual (and further popularized on
   [Brian Stuart's CARDIAC page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html)).
 
-- **Assemble them into decks**: the cards CARDIAC loads, which any CARDIAC simulator can run.
+- **Assemble them into binaries**: the cards CARDIAC loads, which any CARDIAC simulator can run.
 
 - **Run them**, from the command line or in a pipeline, with their input from the command line or standard input.
 
@@ -39,18 +39,19 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 - **Build on them**: everything you need is open source, in this repo.
 
 
-## Cardigan
-[Cardigan](https://lab.strangequery.com/cardigan/) is a full IDE that lets you develop, run and debug CARDIAC programs
-in your browser. Cardigan is built on a WebAssembly build of the `heartburn` library.
+## Want an IDE?
+[Cardigan](https://lab.strangequery.com/cardigan/) is a full-on browser-based IDE that builds on cardiaq to let you develop, run and debug CARDIAC programs in your browser. Cardigan is built on a WebAssembly build of the cardiaq SDK.
 
 ## What's in this repo
 
-| | | like |
+| | | resembles |
 |---|---|---|
-| [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc`, `as` |
-| [`burn`](#burn) | the runtime: runs compiled deck in a fast interpreter | `java`, `dotnet` |
-| [`ekg`](#ekg) | Debugger and profiler. | `gdb`, `perf` |
-| [`heartburn`](#as-a-library) | the Rust library under all three: the machine, the assembler, decks | |
+| [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc` |
+| [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
+| [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
+
+`burn` and HEARTBURN, the execution engine inside it, are the runtime: all you need to run decks. `carc` and
+`ekg` are the SDK's development tools. For now the runtime and the tools come together, in one download.
 
 The three commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
@@ -96,7 +97,7 @@ A program that counts down from 5 in this format. Save it as `countdown.cq`:
     16   900  done   HRS  00
     30   005  n      DATA 5      counts down from here
 
-(The file name doesn't really matter; `.cq` is just a convention in this SDK.)
+(The filename doesn't really matter; `.cq` and `.cqb` are just conventions in this SDK. Both are text formats that any tool can create or manipulate.)
 
 
 **Assemble it.** `carc` writes `countdown.cqb` beside it:
@@ -353,8 +354,9 @@ instructions of self-modifying code) done as one. No JIT: an interpreter, as fas
 
 ## As a library
 
-The crate is `heartburn`: the machine (`cardiac`), the assembler `carc` and Cardigan use (`assemble`), decks
-(`tape`), and listings in the manual's other forms (`listing`).
+All three commands are built on one Rust crate, `heartburn` for now (it holds the SDK's code as well as the engine,
+until the runtime and the tools are packaged separately): the machine (`cardiac`), the assembler `carc` and Cardigan
+use (`assemble`), decks (`tape`), and listings in the manual's other forms (`listing`).
 
 ```rust
 use heartburn::listing::{self, Listing};
