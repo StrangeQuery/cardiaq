@@ -31,7 +31,7 @@ fn carc(args: &[&str]) -> (bool, String, String) {
 fn carc_makes_a_deck_burn_runs() {
     let deck = dir("add").join("add.deck");
     let (ok, _, said) = carc(&[
-        "tests/manual/add.cardiac",
+        "tests/manual/add.cq",
         "--start-at",
         "17",
         "-o",
@@ -40,7 +40,7 @@ fn carc_makes_a_deck_burn_runs() {
     assert!(ok && said.is_empty(), "{said}");
     let text = std::fs::read_to_string(&deck).unwrap();
     assert!(
-        text.starts_with("# add.deck: add.cardiac on cards, for the loader; it starts at 17\n"),
+        text.starts_with("# add.deck: add.cq on cards, for the loader; it starts at 17\n"),
         "{text}"
     );
     assert!(
@@ -60,7 +60,7 @@ fn burn_goes_on_into_the_second_deck_carc_made() {
     let d = dir("sortem");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
     for (listing, deck) in [("sortem-1", "sortem.deck"), ("sortem-2", "sortem.2.deck")] {
-        let (ok, _, said) = carc(&[&format!("tests/sortem/{listing}.cardiac"), "-o", &t(deck)]);
+        let (ok, _, said) = carc(&[&format!("tests/sortem/{listing}.cq"), "-o", &t(deck)]);
         assert!(ok, "{said}");
     }
     assert!(std::fs::read_to_string(t("sortem.deck")).unwrap().starts_with('#'));
@@ -78,7 +78,7 @@ fn burn_goes_on_into_the_second_deck_carc_made() {
 #[test]
 fn the_deck_goes_beside_the_listing_and_starts_where_it_says() {
     let d = dir("beside");
-    let listing = d.join("count.cardiac");
+    let listing = d.join("count.cq");
     std::fs::write(&listing, "; Start at 10.\n10 start OUT n\n11 HRS 00\n30 n DATA 5\n").unwrap();
     let (ok, _, said) = carc(&[listing.to_str().unwrap()]);
     assert!(ok, "{said}");
@@ -92,7 +92,7 @@ fn the_deck_goes_beside_the_listing_and_starts_where_it_says() {
 #[test]
 fn errors_are_reported_and_no_deck_is_written() {
     let d = dir("errors");
-    let listing = d.join("bad.cardiac");
+    let listing = d.join("bad.cq");
     std::fs::write(
         &listing,
         "10 CLA x\n11 199 CLA 99\n12 CLA nowhere\n\u{201c}q\u{201d} 13 CLA 99\n",
@@ -184,10 +184,10 @@ fn command_line_mistakes_are_reported_the_gnu_way_and_exit_2() {
         assert_eq!(said, format!("carc: {why}\n{try_help}"), "{args:?}");
     }
     // a file that isn't there is not a mistake on the command line
-    let (code, _, said) = carc_in(&["nowhere.cardiac"], "");
+    let (code, _, said) = carc_in(&["nowhere.cq"], "");
     assert_eq!(
         (code, said.as_str()),
-        (1, "carc: nowhere.cardiac: No such file or directory\n")
+        (1, "carc: nowhere.cq: No such file or directory\n")
     );
 }
 
@@ -196,7 +196,7 @@ fn options_long_short_bundled_or_after_the_file() {
     let d = dir("options");
     let want = "002\n800\n017\n034\n018\n035\n019\n134\n020\n235\n021\n636\n022\n536\n023\n900\n002\n817\n";
     let out = |n: &str| d.join(n).to_str().unwrap().to_string();
-    let add = "tests/manual/add.cardiac".to_string();
+    let add = "tests/manual/add.cq".to_string();
     for (n, args) in [
         (
             "a.deck",
@@ -221,10 +221,10 @@ fn options_long_short_bundled_or_after_the_file() {
         assert!(std::fs::read_to_string(out(n)).unwrap().ends_with(want), "{a:?}");
     }
     // after --, a name starting with - is a file
-    std::fs::write(d.join("-odd.cardiac"), "10 HRS 00\n").unwrap();
+    std::fs::write(d.join("-odd.cq"), "10 HRS 00\n").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_carc"))
         .current_dir(&d)
-        .args(["--", "-odd.cardiac"])
+        .args(["--", "-odd.cq"])
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -233,7 +233,7 @@ fn options_long_short_bundled_or_after_the_file() {
 
 #[test]
 fn a_listing_from_standard_input_and_a_deck_to_standard_output() {
-    let listing = std::fs::read_to_string("tests/manual/add.cardiac").unwrap();
+    let listing = std::fs::read_to_string("tests/manual/add.cq").unwrap();
     let (code, printed, said) = carc_in(&["-", "--start-at", "17"], &listing);
     assert_eq!(code, 0, "{said}");
     assert!(
@@ -249,10 +249,10 @@ fn a_listing_from_standard_input_and_a_deck_to_standard_output() {
         "<stdin>:1:8: error: unknown label x\ncarc: <stdin>: not assembled: no deck written\n"
     );
     // -o - for a file
-    let (code, printed, _) = carc_in(&["tests/manual/add.cardiac", "--start-at", "17", "-o", "-"], "");
+    let (code, printed, _) = carc_in(&["tests/manual/add.cq", "--start-at", "17", "-o", "-"], "");
     assert_eq!(code, 0);
     assert!(
-        printed.starts_with("# add.cardiac on cards, for the loader; it starts at 17\n"),
+        printed.starts_with("# add.cq on cards, for the loader; it starts at 17\n"),
         "{printed}"
     );
 }

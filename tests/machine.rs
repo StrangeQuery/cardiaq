@@ -121,8 +121,8 @@ fn hrs_n_feeds_tape_n() {
 /// punched; and it ends the same, after the same number of instructions.
 #[test]
 fn state_matches_a_plain_run_at_every_step() {
-    let one = listed(include_str!("sortem/sortem-1.cardiac"));
-    let two = listed(include_str!("sortem/sortem-2.cardiac"));
+    let one = listed(include_str!("sortem/sortem-1.cq"));
+    let two = listed(include_str!("sortem/sortem-2.cq"));
     let input: Vec<i32> = (0..35).map(|i| (i * 37 % 101) - 50).collect();
     let later = vec![two];
     let total =

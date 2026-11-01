@@ -14,7 +14,7 @@ const LIMIT: u64 = 1_000_000_000;
 
 fn usage() -> &'static str {
     "\
-heartburn-tools: the CARDIAC toolchain (decks are NAME.deck, listings NAME.cardiac)
+heartburn-tools: the CARDIAC toolchain (decks are NAME.deck, listings NAME.cq)
 
 Usage:
   heartburn-tools run NAME.deck [-- INPUT...]
@@ -35,8 +35,8 @@ Usage:
       (NAME.2.deck for a program's deck 2).
   heartburn-tools listing FILE... [--start NN] [-o OUT]
       A program in Brian Stuart's six columns, Address, Contents, Label, Opcode, Operand, Comment, a tab between
-      each, under a line saying where it starts: FILE.cardiac, or OUT. From a deck (each of its decks: NAME.cardiac,
-      NAME.2.cardiac, ...), CARDIASM, or listings in any form heartburn runs (their labels
+      each, under a line saying where it starts: FILE.cq, or OUT. From a deck (each of its decks: NAME.cq,
+      NAME.2.cq, ...), CARDIASM, or listings in any form heartburn runs (their labels
       and comments kept). The cells a program can run from its start are instructions, the rest DATA, unless the
       source says.
   heartburn-tools cardiasm FILE.cardiasm
@@ -247,7 +247,7 @@ fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
     let out = output
         .map(Path::new)
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| Path::new(&files[0]).with_extension("cardiac"));
+        .unwrap_or_else(|| Path::new(&files[0]).with_extension("cq"));
     let one = |path: &Path, cells: &[(usize, i32)], at: Option<usize>, notes: &Notes| {
         if at.is_none() {
             eprintln!(

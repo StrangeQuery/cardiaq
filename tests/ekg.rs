@@ -45,7 +45,7 @@ fn script(file: &str, commands: &[&str], input: &[&str]) -> (bool, String, Strin
     ekg(&args)
 }
 
-const SORTEM: &str = "tests/sortem/sortem.cardiac";
+const SORTEM: &str = "tests/sortem/sortem.cq";
 
 #[test]
 fn a_breakpoint_by_label_stops_before_its_instruction() {
@@ -84,7 +84,7 @@ fn a_breakpoint_by_label_stops_before_its_instruction() {
 /// breakpoint runs its instruction.
 #[test]
 fn run_stops_on_a_breakpoint_at_the_start() {
-    let f = dir("start").join("count.cardiac");
+    let f = dir("start").join("count.cq");
     std::fs::write(&f, "10 530 start OUT n\n11 130 CLA n\n12 700 SUB 00\n13 316 TAC done\n14 630 STO n\n15 810 JMP start\n16 900 done HRS 00\n30 002 n DATA 2\n").unwrap();
     let (ok, out, err) = script(f.to_str().unwrap(), &["break start", "run", "p n", "c"], &[]);
     assert!(ok && err.is_empty(), "{out}{err}");
@@ -151,7 +151,7 @@ fn piped_commands_step_list_and_repeat() {
 fn next_runs_a_routine_through() {
     // 10 JMP twice, a routine that doubles n and returns the CARDIAC way: it keeps the JMP the call left in 99 as
     // its last instruction; 11 OUT n, 12 HRS
-    let f = dir("next").join("call.cardiac");
+    let f = dir("next").join("call.cq");
     std::fs::write(
         &f,
         "10 start JMP twice\n11 OUT n\n12 HRS\n20 twice CLA 99\n21 STO ret\n22 CLA n\n23 ADD n\n24 STO n\n\
@@ -179,7 +179,7 @@ fn next_runs_a_routine_through() {
 #[test]
 fn an_inp_with_no_card_waits_for_input() {
     let (ok, out, _) = script(
-        "tests/manual/add.cardiac",
+        "tests/manual/add.cq",
         &["run", "input 123", "c", "input 456", "c", "c"],
         &[],
     );
@@ -196,7 +196,7 @@ fn an_inp_with_no_card_waits_for_input() {
         "{out}"
     );
     // with --batch, a command that fails makes ekg exit 1
-    let (ok, _, err) = script("tests/manual/add.cardiac", &["frobnicate"], &[]);
+    let (ok, _, err) = script("tests/manual/add.cq", &["frobnicate"], &[]);
     assert!(!ok && err == "frobnicate: not a command (help lists them)\n", "{err}");
 }
 
@@ -246,7 +246,7 @@ fn a_deck_is_loaded_by_its_loader_and_disassembled() {
     let (ok, _, said) = run(
         env!("CARGO_BIN_EXE_carc"),
         &[
-            "tests/manual/add.cardiac",
+            "tests/manual/add.cq",
             "--start-at",
             "17",
             "-o",
@@ -285,7 +285,7 @@ fn a_deck_is_loaded_by_its_loader_and_disassembled() {
 
 #[test]
 fn a_listing_with_errors_is_not_run() {
-    let f = dir("errors").join("bad.cardiac");
+    let f = dir("errors").join("bad.cq");
     std::fs::write(&f, "10 CLA x\n11 HRS\n").unwrap();
     let f = f.to_str().unwrap();
     let (ok, out, err) = ekg(&[f, "-x", "run"]);
@@ -294,16 +294,16 @@ fn a_listing_with_errors_is_not_run() {
         err,
         format!("ekg: {f}:1:8: error: unknown label x\nekg: {f}: not assembled\n")
     );
-    let (ok, _, err) = ekg(&["nowhere.cardiac"]);
+    let (ok, _, err) = ekg(&["nowhere.cq"]);
     assert!(
-        !ok && err == "ekg: nowhere.cardiac: No such file or directory\n",
+        !ok && err == "ekg: nowhere.cq: No such file or directory\n",
         "{err}"
     );
 }
 
 #[test]
 fn a_run_that_never_stops_is_stopped_at_the_limit() {
-    let f = dir("forever").join("forever.cardiac");
+    let f = dir("forever").join("forever.cq");
     std::fs::write(&f, "10 top JMP top\n").unwrap();
     let f = f.to_str().unwrap();
     let (ok, out, _) = ekg(&["--batch", f, "--limit=1000", "-x", "c", "-xc", "-x", "info r"]);

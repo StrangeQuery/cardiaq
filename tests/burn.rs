@@ -49,7 +49,7 @@ fn burn_runs_a_deck_with_input_after_dashes_or_piped() {
     let deck = d.join("add.deck");
     tools(&[
         "deck",
-        "tests/manual/add.cardiac",
+        "tests/manual/add.cq",
         "--start",
         "17",
         "-o",
@@ -66,8 +66,8 @@ fn burn_runs_a_deck_with_input_after_dashes_or_piped() {
 fn burn_goes_on_into_the_next_deck() {
     let d = dir("sortem");
     let t = |n: &str| d.join(n).to_str().unwrap().to_string();
-    tools(&["deck", "tests/sortem/sortem-1.cardiac", "-o", &t("sortem.deck")]);
-    tools(&["deck", "tests/sortem/sortem-2.cardiac", "-o", &t("sortem.2.deck")]);
+    tools(&["deck", "tests/sortem/sortem-1.cq", "-o", &t("sortem.deck")]);
+    tools(&["deck", "tests/sortem/sortem-2.cq", "-o", &t("sortem.2.deck")]);
     let input: String = (1..=35).rev().map(|n| format!("{n} ")).collect();
     let (ok, printed, said) = burn(&[&t("sortem.deck")], &input);
     assert!(ok, "{said}");
@@ -79,14 +79,14 @@ fn burn_goes_on_into_the_next_deck() {
 #[test]
 fn burn_looks_inside_not_at_the_name() {
     // a listing is refused for what it is, not for its name
-    let (ok, _, said) = burn(&["tests/manual/add.cardiac"], "");
+    let (ok, _, said) = burn(&["tests/manual/add.cq"], "");
     assert!(!ok && said.contains("not a CARDIAC deck"), "{said}");
     // a deck runs whatever it is called
     let d = dir("names");
     let odd = d.join("add.cards");
     tools(&[
         "deck",
-        "tests/manual/add.cardiac",
+        "tests/manual/add.cq",
         "--start",
         "17",
         "-o",
@@ -126,7 +126,7 @@ fn add_deck(test: &str) -> String {
     let deck = dir(test).join("add.deck");
     tools(&[
         "deck",
-        "tests/manual/add.cardiac",
+        "tests/manual/add.cq",
         "--start",
         "17",
         "-o",
@@ -174,9 +174,9 @@ fn command_line_mistakes_exit_2_and_a_deck_that_cant_run_1() {
     );
     let (code, _, said) = burn_status(&["tests"], "");
     assert_eq!((code, said.as_str()), (1, "burn: tests: Is a directory\n"));
-    let (code, _, said) = burn_status(&["tests/manual/add.cardiac"], "");
+    let (code, _, said) = burn_status(&["tests/manual/add.cq"], "");
     assert!(
-        code == 1 && said.starts_with("burn: tests/manual/add.cardiac: not a CARDIAC deck"),
+        code == 1 && said.starts_with("burn: tests/manual/add.cq: not a CARDIAC deck"),
         "{said}"
     );
 }

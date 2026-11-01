@@ -19,7 +19,7 @@ const LIMIT: u64 = 1_000_000_000;
 fn usage() -> &'static str {
     "\
 Usage: ekg [OPTION]... FILE [INPUT]...
-Debug a CARDIAC program, or profile it (--profile). FILE is a listing (NAME.cardiac, assembled as carc assembles
+Debug a CARDIAC program, or profile it (--profile). FILE is a listing (NAME.cq, assembled as carc assembles
 it) or a deck (loaded by its own loader, as burn loads it), told apart by what is in it. INPUT is the cards in the
 reader when it starts (after --, so that negative cards aren't taken for options).
 
@@ -1004,7 +1004,7 @@ mod tests {
     fn the_command_line_is_read_as_getopt_long_reads_it() {
         let o = options(&args(&[
             "-q",
-            "f.cardiac",
+            "f.cq",
             "-xrun",
             "--eval-command=p n",
             "-x",
@@ -1018,7 +1018,7 @@ mod tests {
             "7",
         ]))
         .unwrap();
-        assert_eq!(o.file.as_deref(), Some("f.cardiac"));
+        assert_eq!(o.file.as_deref(), Some("f.cq"));
         assert_eq!(o.script, ["run", "p n", "c"]);
         assert_eq!(o.input, ["-5", "7"]);
         assert!(o.quiet && o.profile && !o.batch);

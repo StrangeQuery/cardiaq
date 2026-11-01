@@ -38,7 +38,7 @@ in your browser. Cardigan is built on a WebAssembly build of the `heartburn` lib
 
 | | | like |
 |---|---|---|
-| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cardiac`) into decks (`NAME.deck`) | `gcc`, `as` |
+| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cq`) into decks (`NAME.deck`) | `gcc`, `as` |
 | [`burn`](#burn) | the runtime: runs compiled deck in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | Debugger and profiler. | `gdb`, `perf` |
 | [`heartburn`](#as-a-library) | the Rust library under all three: the machine, the assembler, decks | |
@@ -73,7 +73,7 @@ cardiaq uses the six-column assembly language format documented on [Brian Stuart
 The format is a little less powerful than Jason Whittington's [cardiasm](https://github.com/jawhitti/Cardiac), but it
 is a _lot_ more widely used.
 
-A program that counts down from 5 in this format. Save it as `countdown.cardiac`:
+A program that counts down from 5 in this format. Save it as `countdown.cq`:
 
     ; Countdown: prints 5, 4, 3, 2, 1, 0 and stops.
     ; Start at 10.
@@ -87,14 +87,14 @@ A program that counts down from 5 in this format. Save it as `countdown.cardiac`
     16   900  done   HRS  00
     30   005  n      DATA 5      counts down from here
 
-(The file name doesn't really matter; `.cardiac` is just a convention in this SDK.)
+(The file name doesn't really matter; `.cq` is just a convention in this SDK.)
 
 
 **Assemble it.** `carc` writes `countdown.deck` beside it:
 
-    $ carc countdown.cardiac
+    $ carc countdown.cq
     $ cat countdown.deck
-    # countdown.deck: countdown.cardiac on cards, for the loader; it starts at 10
+    # countdown.deck: countdown.cq on cards, for the loader; it starts at 10
     # CARDIAC cards, one per line, read from the top. The program's input goes after them.
     002
     800
@@ -127,15 +127,15 @@ read the deck in; `ekg`, below, counts only the program's.
 
 **Make a mistake.** Misspell the label in cell 13 and get cell 11's contents wrong:
 
-    $ carc oops.cardiac
-    oops.cardiac:5:6: warning: contents +131, but CLA n is +130: loading the contents
-    oops.cardiac:7:23: error: unknown label dun
-    carc: oops.cardiac: not assembled: no deck written
+    $ carc oops.cq
+    oops.cq:5:6: warning: contents +131, but CLA n is +130: loading the contents
+    oops.cq:7:23: error: unknown label dun
+    carc: oops.cq: not assembled: no deck written
 
 **Debug it.** Stop at `start`, look at `n`, watch it change, carry on. Commands can be typed at the `(ekg)` prompt,
 or given with `-x`:
 
-    $ ekg --batch countdown.cardiac -x 'break start' -x run -x 'p n' -x 'watch n' -x continue \
+    $ ekg --batch countdown.cq -x 'break start' -x run -x 'p n' -x 'watch n' -x continue \
           -x continue -x 'info registers' -x delete -x continue
     breakpoint at 10 (start)
     breakpoint, cell 10
@@ -157,8 +157,8 @@ or given with `-x`:
 
 **Profile it.**
 
-    $ ekg --profile countdown.cardiac 2>/dev/null
-    countdown.cardiac: halted after 35 instructions, in 0.000 s (1.3 million a second)
+    $ ekg --profile countdown.cq 2>/dev/null
+    countdown.cq: halted after 35 instructions, in 0.000 s (1.3 million a second)
 
     Hottest cells:
                6  17.14%  10   530  start    OUT  n        ; print n, take one off, and stop once it goes below zero
@@ -205,9 +205,9 @@ instructions. That is what `ekg`'s `watch` is for.
 
 `carc` is the assembler: it makes a listing into a deck.
 
-    carc countdown.cardiac                             # writes countdown.deck beside it
-    carc --start-at=10 -o out.deck countdown.cardiac   # options before or after the file
-    carc - < countdown.cardiac | burn -                # the listing from standard input, the deck to standard output
+    carc countdown.cq                             # writes countdown.deck beside it
+    carc --start-at=10 -o out.deck countdown.cq   # options before or after the file
+    carc - < countdown.cq | burn -                # the listing from standard input, the deck to standard output
 
 **Listings.** A listing has a cell a line, in Brian Stuart's six columns, `ADDRESS CONTENTS LABEL OPCODE OPERAND
 COMMENT`, or the manual's `ADDRESS CONTENTS COMMENT`. The contents may be left out, and are then worked out from the
@@ -222,7 +222,7 @@ errors. Contents that disagree with the opcode and operand are a warning: the co
 
 | | |
 |---|---|
-| `-o`, `--output=FILE` | write the deck to FILE (`-` for standard output); by default `NAME.deck` beside `NAME.cardiac`, or standard output for a listing read from standard input |
+| `-o`, `--output=FILE` | write the deck to FILE (`-` for standard output); by default `NAME.deck` beside `NAME.cq`, or standard output for a listing read from standard input |
 | `--start-at=NN` | start the program at cell NN |
 | `-h`, `--help` | display help and exit |
 | `--version` | output version information and exit |
@@ -237,7 +237,7 @@ mistake on the command line.
     burn countdown.deck              # run a deck
     burn add.deck -- 123 456         # input cards after the deck (the -- is optional)
     echo 123 456 | burn add.deck     # or on standard input, each card read when an INP asks for it
-    carc - < add.cardiac | burn -    # the deck itself from standard input
+    carc - < add.cq | burn -    # the deck itself from standard input
     burn bench                       # run diagnostics for how fast this machine runs CARDIAC
 
 **Decks.** A deck is plain text, one card per line (lines starting with `#` are comments). There is no auto-loader,
@@ -268,9 +268,9 @@ or ran out of cards, 1 if the deck can't be read or the program never stops (a r
 kept) or a deck (loaded by its own loader, as `burn` loads it, and disassembled), told apart by what is in it, and the
 program's input after it:
 
-    ekg countdown.cardiac                          # debug, at the (ekg) prompt
-    ekg --batch mul.cardiac -x 'break 17' -x run -x 'p p' -- 6 7
-    ekg --profile mul.cardiac -- 6 7               # run it to the end and report where the instructions went
+    ekg countdown.cq                          # debug, at the (ekg) prompt
+    ekg --batch mul.cq -x 'break 17' -x run -x 'p p' -- 6 7
+    ekg --profile mul.cq -- 6 7               # run it to the end and report where the instructions went
 
 **Debugging.** The commands are gdb's where gdb has one. A PLACE is a cell (00-99), a label, or `label+N`.
 

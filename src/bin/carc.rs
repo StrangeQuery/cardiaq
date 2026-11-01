@@ -25,7 +25,7 @@ the program at NN: where --start-at says, or else where the listing says (a \"St
 start, its first instruction).
 
   -o, --output=FILE  write the deck to FILE (- for standard output); by default NAME.deck beside
-                       NAME.cardiac, or standard output for a listing read from standard input
+                       NAME.cq, or standard output for a listing read from standard input
       --start-at=NN  start the program at cell NN
   -h, --help         display this help and exit
       --version      output version information and exit
