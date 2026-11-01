@@ -1,6 +1,11 @@
 # cardiaq
 
-Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a debugger, and a _stupid_ fast runtime. 
+Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a debugger, and a _stupid_ fast runtime.
+
+```
+carc countdown.cq     # compiles to countdown.cqb
+burn countdown.cqb    # runs it in the fast emulator
+```
 
 [CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation)
 (the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman) was a computer you
@@ -16,7 +21,7 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 
 ## What you can do with this SDK
 
-- **Write CARDIAC programs** as listings using the six column format from the 1968 manual (and further popularized on 
+- **Write CARDIAC programs** as listings using the six-column format from the 1968 manual (and further popularized on
   [Brian Stuart's CARDIAC page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html)).
 
 - **Assemble them into decks**: the cards CARDIAC loads, which any CARDIAC simulator can run.
@@ -31,14 +36,14 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 
 
 ## Cardigan
-[Cardigan](https://lab.strangequery.com/cardigan/) is a full IDE that lets you develop, run and debug CARDIAC programs 
+[Cardigan](https://lab.strangequery.com/cardigan/) is a full IDE that lets you develop, run and debug CARDIAC programs
 in your browser. Cardigan is built on a WebAssembly build of the `heartburn` library.
 
 ## What's in this repo
 
 | | | like |
 |---|---|---|
-| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc`, `as` |
+| [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc`, `as` |
 | [`burn`](#burn) | the runtime: runs compiled deck in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | Debugger and profiler. | `gdb`, `perf` |
 | [`heartburn`](#as-a-library) | the Rust library under all three: the machine, the assembler, decks | |
