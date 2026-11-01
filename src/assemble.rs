@@ -1,6 +1,6 @@
 //! The assembler: a listing in Brian Stuart's six columns made into the cells it describes, and a deck for the
-//! loader. It is what `carc` runs, and what Cardigan, the CARDIAC IDE, reads its listings with (through
-//! heartburn.wasm).
+//! loader. It is what `carc` runs, and what Cardigan, the CARDIAC IDE, reads its listings with (built to
+//! WebAssembly).
 //!
 //! A listing is text. A line is a cell when it starts with an address and then the contents (or an opcode, the
 //! contents then worked out from it): `ADDRESS CONTENTS [LABEL] [OPCODE OPERAND] [COMMENT]`, the six columns of
@@ -15,7 +15,7 @@
 //!
 //! Spans are byte offsets into their line. A web page counts in UTF-16 units: `utf16` converts.
 //!
-//! The code is written to stay small in heartburn.wasm: no `format!` (numbers are written by `decimal`), no maps (a
+//! The code is written to stay small built to WebAssembly: no `format!` (numbers are written by `decimal`), no maps (a
 //! listing has a hundred labels at most: a list will do), and text sliced with `get`, so no slicing can panic.
 use std::ops::Range;
 
@@ -127,8 +127,8 @@ fn words(line: &str) -> Vec<(Range<usize>, &str)> {
     w
 }
 
-// `#[inline(never)]`, here and on a few others: called from many places, each inlined would make heartburn.wasm
-// bigger, and the assembler no faster that shows
+// `#[inline(never)]`, here and on a few others: called from many places, each inlined would make a WebAssembly
+// build bigger, and the assembler no faster that shows
 #[inline(never)]
 fn digits(t: &str) -> bool {
     !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit())

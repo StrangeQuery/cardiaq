@@ -178,7 +178,7 @@ fn owners_and_write_steps() {
     assert_eq!((m.owners()[50], fresh.owners()[20], fresh.owners()[21]), (2, 1, 0));
 }
 
-/// (The `marks` feature, as heartburn.wasm is built) The cells run, the cells used as data, and the last
+/// (The `marks` feature, as a WebAssembly build turns it on) The cells run, the cells used as data, and the last
 /// instruction; a breakpoint or an INP waiting for a card marks nothing.
 #[cfg(feature = "marks")]
 #[test]
