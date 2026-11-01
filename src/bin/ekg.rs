@@ -43,7 +43,7 @@ read from standard input, each when an INP asks for it, as burn reads them.
 Exit status is 0 on success, 1 when something failed (a listing with errors; with --batch, a command; in a
 profile, a run stopped at the limit), and 2 for a usage error.
 
-Report bugs to: https://github.com/StrangeQuery/heartburn/issues
+Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
 "
 }
 
