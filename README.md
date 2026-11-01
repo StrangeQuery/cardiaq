@@ -14,6 +14,8 @@ burn countdown.cqb    # runs it in the fast emulator
 worked by hand: 100 cells of three decimal digits, a four-digit accumulator, ten instructions, all worked on
 strips of paper.
 
+<p align="center"><img src="assets/cardiac.jpg" alt="A CARDIAC: the cardboard computer, its slides pulled out" width="360"></p>
+
 cardiaq is a modern toolkit for writing, debugging, and running CARDIAC programs on a real computer.
 Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 
