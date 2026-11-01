@@ -1,6 +1,6 @@
 //! burn: run a CARDIAC deck, and see how fast this machine runs CARDIAC. It only runs things: decks are made from
 //! listings by carc (or Cardigan's Export). A file is a deck if it looks like one: it starts with the loader.
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -8,34 +8,40 @@ use heartburn::cardiac::{self, Console, Stop};
 use heartburn::listing;
 use heartburn::tape::{values, Tape};
 
+mod getopt;
+
 /// Instructions a run may take before it is called a program that never stops.
 const LIMIT: u64 = 1_000_000_000;
 
+const PROG: &str = "burn";
+
 fn usage() -> &'static str {
     "\
-burn: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast
+Usage: burn [OPTION]... DECK [--] [INPUT]...
+  or:  burn bench
+Run a CARDIAC deck: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast.
 
-Usage:
-  burn NAME.deck [-- INPUT...]
-      Run a deck: cards, one a line (lines starting with # are comments), starting with the loader's
-      002 and 800 (whatever the file is called). The input is the numbers after --, or
-      else standard input, each card read when an INP asks for it. Each card it punches is printed on a line of
-      its own as it is punched. How it stopped, and after how many instructions, goes to standard error.
-      A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.deck
-      beside it goes in the reader and it starts again at 00.
-  burn bench
-      How fast this machine runs CARDIAC: three nested countdown loops, 626.5 million instructions.
+A deck is cards, one a line (lines starting with # are comments), starting with the loader's 002 and 800,
+whatever the file is called; carc makes one from a listing. With DECK -, the deck is read from standard input.
+The program's input is the INPUT numbers after DECK, if there are any or a --, or else standard input, each card
+read when an INP asks for it. Each card it punches is printed on a line of its own as it is punched. How it
+stopped, and after how many instructions, goes to standard error.
+A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.deck beside it
+goes in the reader and it starts again at 00.
+
+burn bench: how fast this machine runs CARDIAC, three nested countdown loops, 626.5 million instructions. (A deck
+called bench runs as ./bench.)
+
+  -h, --help     display this help and exit
+      --version  output version information and exit
+
+Exit status is 0 if the program halted or ran out of cards, 1 if the deck can't be read or the program doesn't
+stop, 2 for a mistake on the command line.
 "
 }
 
 fn die(why: impl std::fmt::Display) -> ! {
-    eprintln!("error: {why}");
-    std::process::exit(1)
-}
-
-fn bad_usage(why: &str) -> ! {
-    eprintln!("error: {why}\n\n{}", usage());
-    std::process::exit(2)
+    getopt::die(PROG, why)
 }
 
 /// The teletype: each card on standard output as it is punched.
@@ -56,7 +62,9 @@ fn stdin_cards() -> impl Iterator<Item = i32> {
         if let Some(c) = pending.next() {
             return Some(c);
         }
-        let line = lines.next()?.unwrap_or_else(|e| die(format!("standard input: {e}")));
+        let line = lines
+            .next()?
+            .unwrap_or_else(|e| die(format!("standard input: {}", getopt::os_error(&e))));
         pending = values(&line)
             .unwrap_or_else(|e| die(format!("standard input: {e}")))
             .into_iter();
@@ -69,31 +77,41 @@ fn looks_like_a_deck(deck: &Tape) -> bool {
 }
 
 fn run(file: &str, input: Option<Vec<i32>>) {
+    let name = if file == "-" { "standard input" } else { file };
     // what a file is, from what's in it, not its name: a deck starts with the loader
-    if !Path::new(file).is_file() {
-        die(format!("{file}: no such file"))
-    }
-    let mut deck = Tape::load(Path::new(file))
-        .ok()
-        .filter(looks_like_a_deck)
-        .unwrap_or_else(|| {
-            die(format!(
-                "{file}: not a CARDIAC deck (a deck starts with the loader's cards, 002 and 800): make one from a \
-                 listing with carc"
-            ))
-        });
-    let dir = Path::new(file)
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
+    let not_a_deck = |name: &str| -> ! {
+        die(format!(
+            "{name}: not a CARDIAC deck (a deck starts with the loader's cards, 002 and 800): make one from a \
+             listing with carc"
+        ))
+    };
+    let (mut deck, dir, input) = if file == "-" {
+        // the whole of standard input is the deck (and any cards after it), so the input is what comes after DECK
+        let mut text = String::new();
+        std::io::stdin()
+            .read_to_string(&mut text)
+            .unwrap_or_else(|e| die(format!("standard input: {}", getopt::os_error(&e))));
+        let deck = Tape::parse(&text).ok().filter(looks_like_a_deck);
+        let deck = deck.unwrap_or_else(|| not_a_deck(name));
+        (deck, Path::new("."), Some(input.unwrap_or_default()))
+    } else {
+        // read once for what the OS says is wrong (no such file, a directory, no permission)
+        std::fs::read(file).unwrap_or_else(|e| die(format!("{file}: {}", getopt::os_error(&e))));
+        let deck = Tape::load(Path::new(file)).ok().filter(looks_like_a_deck);
+        let dir = Path::new(file)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        (deck.unwrap_or_else(|| not_a_deck(file)), dir, input)
+    };
     deck.bind_dir(&dir.join("resources"))
-        .unwrap_or_else(|e| die(format!("{file}: {e}")));
+        .unwrap_or_else(|e| die(format!("{name}: {e}")));
     let mut teletype = Teletype(std::io::stdout().lock());
     let (why, steps) = match input {
         Some(cards) => deck.run_into(&cards, &mut std::iter::empty(), LIMIT, &mut teletype),
         None => deck.run_into(&[], &mut stdin_cards(), LIMIT, &mut teletype),
     }
-    .unwrap_or_else(|e| die(format!("{file}: {e}")));
+    .unwrap_or_else(|e| die(format!("{name}: {e}")));
     match why {
         Stop::Halt => eprintln!("     halted after {steps} instructions"),
         Stop::OutOfCards => eprintln!("     out of cards after {steps} instructions"),
@@ -133,23 +151,42 @@ fn bench() {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let (before, after) = match args.iter().position(|a| a == "--") {
-        Some(i) => (&args[..i], Some(&args[i + 1..])),
-        None => (&args[..], None),
-    };
-    match before {
-        [c] if c == "bench" && after.is_none() => bench(),
-        [c] if c == "help" || c == "--help" || c == "-h" => print!("{}", usage()),
-        [f] if f.starts_with('-') => bad_usage(&format!("unknown option {f}")),
-        [f] => {
-            let input = after.map(|a| values(&a.join(" ")).unwrap_or_else(|e| bad_usage(&e)));
-            run(f, input)
+    let opts = [
+        getopt::Opt {
+            short: Some('h'),
+            long: "help",
+            arg: false,
+        },
+        getopt::Opt {
+            short: None,
+            long: "version",
+            arg: false,
+        },
+    ];
+    // options come before the deck: what follows it is the program's input, -5 a card, not an option
+    let (given, operands) = getopt::parse(PROG, &opts, std::env::args().skip(1), true);
+    if let Some((o, _)) = given.first() {
+        match *o {
+            "help" => print!("{}", usage()),
+            _ => getopt::version(PROG),
         }
-        [] => {
-            eprint!("{}", usage());
-            std::process::exit(2)
+        return;
+    }
+    match operands.split_first() {
+        None => getopt::usage_error(PROG, "missing deck operand"),
+        // `burn help`, as burn always took it
+        Some((c, [])) if c == "help" => print!("{}", usage()),
+        Some((c, [])) if c == "bench" => bench(),
+        Some((c, [extra, ..])) if c == "bench" => getopt::usage_error(PROG, format!("extra operand '{extra}'")),
+        Some((deck, rest)) => {
+            let (dashes, rest) = match rest {
+                [d, r @ ..] if d == "--" => (true, r),
+                r => (false, r),
+            };
+            let input = (dashes || !rest.is_empty()).then(|| {
+                values(&rest.join(" ")).unwrap_or_else(|e| getopt::usage_error(PROG, format!("invalid input: {e}")))
+            });
+            run(deck, input)
         }
-        _ => bad_usage("one deck at a time"),
     }
 }

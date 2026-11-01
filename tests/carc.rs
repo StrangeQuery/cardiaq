@@ -105,3 +105,125 @@ fn every_manual_listing_assembles() {
         assert!(ok && !said.contains("error"), "{}: {said}", p.display());
     }
 }
+
+/// `carc ARGS`, `stdin` on its standard input: (its exit status, what it printed, what it said on standard error).
+fn carc_in(args: &[&str], stdin: &str) -> (i32, String, String) {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_carc"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    (
+        out.status.code().unwrap(),
+        String::from_utf8(out.stdout).unwrap(),
+        String::from_utf8(out.stderr).unwrap(),
+    )
+}
+
+#[test]
+fn help_and_version_go_to_standard_output() {
+    for a in ["--help", "-h", "--he"] {
+        let (code, printed, said) = carc_in(&[a], "");
+        assert!(code == 0 && printed.starts_with("Usage: carc [OPTION]... FILE\n") && said.is_empty());
+    }
+    let (code, printed, _) = carc_in(&["--version"], "");
+    assert_eq!(code, 0);
+    assert_eq!(
+        printed.lines().next(),
+        Some(format!("carc (cardiaq) {}", env!("CARGO_PKG_VERSION")).as_str())
+    );
+    assert!(printed.contains("MIT"), "{printed}");
+}
+
+#[test]
+fn command_line_mistakes_are_reported_the_gnu_way_and_exit_2() {
+    let try_help = "Try 'carc --help' for more information.\n";
+    for (args, why) in [
+        (&["--frob", "x"][..], "unrecognized option '--frob'"),
+        (&["-x"], "invalid option -- 'x'"),
+        (&["x", "-o"], "option requires an argument -- 'o'"),
+        (&["x", "--output"], "option '--output' requires an argument"),
+        (&["--help=1"], "option '--help' doesn't allow an argument"),
+        (&[], "no input file"),
+        (&["a", "b"], "extra operand 'b'"),
+        (
+            &["-s", "100", "x"],
+            "invalid cell '100' for '--start': a cell is 00 to 99",
+        ),
+    ] {
+        let (code, printed, said) = carc_in(args, "");
+        assert_eq!((code, printed.as_str()), (2, ""), "{args:?}");
+        assert_eq!(said, format!("carc: {why}\n{try_help}"), "{args:?}");
+    }
+    // a file that isn't there is not a mistake on the command line
+    let (code, _, said) = carc_in(&["nowhere.cardiac"], "");
+    assert_eq!(
+        (code, said.as_str()),
+        (1, "carc: nowhere.cardiac: No such file or directory\n")
+    );
+}
+
+#[test]
+fn options_long_short_bundled_or_after_the_file() {
+    let d = dir("options");
+    let want = "002\n800\n017\n034\n018\n035\n019\n134\n020\n235\n021\n636\n022\n536\n023\n900\n002\n817\n";
+    let out = |n: &str| d.join(n).to_str().unwrap().to_string();
+    let add = "tests/manual/add.cardiac".to_string();
+    for (n, args) in [
+        (
+            "a.deck",
+            vec![add.clone(), "--start=17".into(), format!("--output={}", out("a.deck"))],
+        ),
+        ("b.deck", vec!["-s17".into(), "-o".into(), out("b.deck"), add.clone()]),
+        (
+            "c.deck",
+            vec!["--st".into(), "17".into(), add.clone(), format!("-o{}", out("c.deck"))],
+        ),
+    ] {
+        let a: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (code, _, said) = carc_in(&a, "");
+        assert_eq!(code, 0, "{a:?}: {said}");
+        assert!(std::fs::read_to_string(out(n)).unwrap().ends_with(want), "{a:?}");
+    }
+    // after --, a name starting with - is a file
+    std::fs::write(d.join("-odd.cardiac"), "10 HRS 00\n").unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_carc"))
+        .current_dir(&d)
+        .args(["--", "-odd.cardiac"])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(d.join("-odd.deck").exists());
+}
+
+#[test]
+fn a_listing_from_standard_input_and_a_deck_to_standard_output() {
+    let listing = std::fs::read_to_string("tests/manual/add.cardiac").unwrap();
+    let (code, printed, said) = carc_in(&["-", "-s", "17"], &listing);
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        printed.starts_with("# <stdin> on cards, for the loader; it starts at 17\n"),
+        "{printed}"
+    );
+    assert!(printed.ends_with("\n002\n817\n"), "{printed}");
+    // what is wrong is reported as <stdin>
+    let (code, printed, said) = carc_in(&["-"], "10 CLA x\n");
+    assert_eq!((code, printed.as_str()), (1, ""));
+    assert_eq!(
+        said,
+        "<stdin>:1:8: error: unknown label x\ncarc: <stdin>: not assembled: no deck written\n"
+    );
+    // -o - for a file
+    let (code, printed, _) = carc_in(&["tests/manual/add.cardiac", "-s", "17", "-o", "-"], "");
+    assert_eq!(code, 0);
+    assert!(
+        printed.starts_with("# add.cardiac on cards, for the loader; it starts at 17\n"),
+        "{printed}"
+    );
+}

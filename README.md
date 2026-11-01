@@ -23,6 +23,7 @@ This installs one command, `burn`.
     burn add.deck -- 123 456      # input after --
     echo 123 456 | burn add.deck  # or on standard input, each card read when an INP asks for it
     burn bench                    # how fast this machine runs CARDIAC
+    burn --help                   # the options and the rest
 
 `burn` runs a deck and prints each card the program punches, on a line of its own, as it is punched. How it stopped,
 and after how many instructions, goes to standard error, so the output pipes cleanly:
@@ -38,6 +39,15 @@ output through perl:
 
 That prints each card as the Unicode character with that number and skips negative cards. (`awk '{printf "%c", $1}'`
 also works, for 0-127 only.)
+
+Everything after the deck is its input, minus signs and all (`burn add.deck -5 7`); the `--` is optional, and with
+nothing after it, standard input isn't read. `burn -` reads the deck itself from standard input. Options go before
+the deck. `burn` exits with 0 when the program stops, 1 when the deck can't be read or the program never stops, and 2
+for a mistake on the command line, reported the way GNU tools report one:
+
+    $ burn --frob add.deck
+    burn: unrecognized option '--frob'
+    Try 'burn --help' for more information.
 
 ## Decks
 
@@ -61,8 +71,9 @@ columns, `ADDRESS CONTENTS LABEL OPCODE OPERAND COMMENT`, or the manual's `ADDRE
 may be left out, and are then worked out from the opcode and the operand (a number, `label` or `label+N`). Lines
 that aren't cells (titles, prose, `;` and `#` comments) are skipped.
 
-    carc count.cardiac                # writes count.deck beside it
-    carc count.cardiac -o out.deck --start 10
+    carc count.cardiac                       # writes count.deck beside it
+    carc -s 10 -o out.deck count.cardiac     # or --start=10 --output=out.deck, before or after the file
+    carc - < count.cardiac | burn -          # the listing from standard input, the deck to standard output
 
 The deck starts at `--start`, or else where the listing says: a `Start at NN.` line, the line labelled `start`, its
 first instruction. What is wrong is reported the way a compiler reports it, and no deck is written while there are
@@ -73,6 +84,10 @@ errors:
 
 Contents that disagree with the opcode and operand are a warning: the contents are what load. CARDIAC Code reads
 listings with the same assembler (`heartburn::assemble`), so a listing assembles the same in both.
+
+`carc --help` lists the options. It exits with 0 when the deck is written, 1 when the listing has errors or a file
+can't be read or written (`carc: count.cardiac: No such file or directory`), and 2 for a mistake on the command line,
+as `burn` does.
 
 ## How fast
 
