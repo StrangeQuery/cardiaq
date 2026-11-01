@@ -18,6 +18,11 @@ path = "src/lib.rs"
 name = "burn"
 path = "src/main.rs"
 
+# the assembler: a listing in six columns made into a deck for burn
+[[bin]]
+name = "carc"
+path = "src/bin/carc.rs"
+
 # The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Not installed by
 # `cargo install heartburn` (it needs the feature); the tests build it.
 [[bin]]

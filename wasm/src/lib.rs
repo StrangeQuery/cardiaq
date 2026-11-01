@@ -6,8 +6,14 @@
 //!
 //! Stops (`hb_run`, `hb_step`): 0 the steps asked for have run, 1 halted (HRS: the PC on its address), 2 at a
 //! breakpoint, 3 an INP waiting for a card, 100 + n tape n put in the reader (HRS n), the PC on 00.
+//!
+//! The assembler (`heartburn::assemble`) is here too, for the page to read its listings with: it passes text,
+//! UTF-8, through `hb_text`, and gets back JSON (`hb_assemble`), a deck (`hb_deck`), or one line's columns
+//! (`hb_tokenize`). Offsets in what comes back are in UTF-16 units, as the page counts them.
 use std::cell::RefCell;
+use std::fmt::Write;
 
+use heartburn::assemble::{self, Line};
 use heartburn::cardiac::{Event, Machine};
 
 #[derive(Default)]
@@ -17,6 +23,12 @@ struct State {
     buffer: Vec<i32>,
     tapes: Vec<Vec<i32>>,
     punched: Vec<i32>,
+    /// the text the page passes in, UTF-8: a listing, or a line of one
+    text: Vec<u8>,
+    /// what the assembler gives back: JSON, or a deck
+    out: String,
+    /// a line's columns (`hb_tokenize`)
+    columns: [i32; 12],
 }
 
 thread_local! {
@@ -292,4 +304,168 @@ pub extern "C" fn hb_last_word() -> i32 {
 #[no_mangle]
 pub extern "C" fn hb_last_acc() -> i32 {
     with(|s| s.machine.last().2)
+}
+
+/// A buffer of `n` bytes for the page to put text in, UTF-8; its address. Each call that takes `n` reads its first
+/// `n`.
+#[no_mangle]
+pub extern "C" fn hb_text(n: u32) -> *mut u8 {
+    with(|s| {
+        s.text.clear();
+        s.text.resize(n as usize, 0);
+        s.text.as_mut_ptr()
+    })
+}
+
+/// What the assembler last gave back (`hb_assemble`, `hb_deck`): its address.
+#[no_mangle]
+pub extern "C" fn hb_out() -> *const u8 {
+    with(|s| s.out.as_ptr())
+}
+
+fn text(s: &State, n: u32) -> Option<&str> {
+    std::str::from_utf8(s.text.get(..n as usize)?).ok()
+}
+
+/// A string as JSON: quoted, and escaped.
+fn json(out: &mut String, v: Option<&str>) {
+    let Some(v) = v else {
+        out.push_str("null");
+        return;
+    };
+    out.push('"');
+    for c in v.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+fn number(out: &mut String, v: Option<i64>) {
+    match v {
+        Some(v) => {
+            let _ = write!(out, "{v}");
+        }
+        None => out.push_str("null"),
+    }
+}
+
+/// Assemble the text's first `n` bytes, a listing: JSON at `hb_out`, its length in bytes; -1 if it isn't UTF-8.
+///
+/// `{"lines": N, "start": S, "rows": [{"ln", "addr", "contents", "label", "op", "operand", "comment"}],
+/// "diagnostics": [{"ln", "s", "e", "msg", "warn", "dup", "want"}], "words": [W, ...]}`: lines from 0, a
+/// diagnostic's span (s to e) in UTF-16 units in its line, null for what isn't there; `words` has what each line's
+/// opcode and operand make.
+#[no_mangle]
+pub extern "C" fn hb_assemble(n: u32) -> i32 {
+    with(|s| {
+        let Some(t) = text(s, n) else {
+            return -1;
+        };
+        let asm = assemble::assemble(t);
+        let lines = assemble::lines(t);
+        let mut o = String::new();
+        let _ = write!(o, "{{\"lines\":{},\"start\":", asm.lines);
+        number(&mut o, asm.start.map(|a| a as i64));
+        o.push_str(",\"rows\":[");
+        for (k, r) in asm.rows.iter().enumerate() {
+            let _ = write!(
+                o,
+                "{}{{\"ln\":{},\"addr\":{},\"contents\":{},\"label\":",
+                if k > 0 { "," } else { "" },
+                r.line,
+                r.addr,
+                r.contents
+            );
+            json(&mut o, r.label.as_deref());
+            o.push_str(",\"op\":");
+            json(&mut o, r.op);
+            o.push_str(",\"operand\":");
+            json(&mut o, r.operand.as_deref());
+            o.push_str(",\"comment\":");
+            json(&mut o, Some(&r.comment));
+            o.push('}');
+        }
+        o.push_str("],\"diagnostics\":[");
+        for (k, d) in asm.diagnostics.iter().enumerate() {
+            let line = lines[d.line];
+            let (s16, e16) = (assemble::utf16(line, d.span.start), assemble::utf16(line, d.span.end));
+            let _ = write!(
+                o,
+                "{}{{\"ln\":{},\"s\":{s16},\"e\":{e16},\"msg\":",
+                if k > 0 { "," } else { "" },
+                d.line
+            );
+            json(&mut o, Some(&d.message));
+            let _ = write!(o, ",\"warn\":{},\"dup\":{},\"want\":", d.warning, d.duplicate);
+            number(&mut o, d.want.map(i64::from));
+            o.push('}');
+        }
+        o.push_str("],\"words\":[");
+        for (k, w) in asm.words.iter().enumerate() {
+            if k > 0 {
+                o.push(',');
+            }
+            number(&mut o, w.map(i64::from));
+        }
+        o.push_str("]}");
+        s.out = o;
+        s.out.len() as i32
+    })
+}
+
+/// The deck for the text's first `n` bytes, a listing, starting at `start`: its cards, one a line (as a deck file
+/// has them), at `hb_out`; their length in bytes. -1 if the text isn't UTF-8 or the start isn't a cell.
+#[no_mangle]
+pub extern "C" fn hb_deck(n: u32, start: u32) -> i32 {
+    if start >= 100 {
+        return -1;
+    }
+    with(|s| {
+        let Some(t) = text(s, n) else {
+            return -1;
+        };
+        s.out = assemble::deck_text(&assemble::deck(&assemble::assemble(t), start as usize));
+        s.out.len() as i32
+    })
+}
+
+/// One line's columns, the text's first `n` bytes: 12 words, in UTF-16 units, -1 for what isn't there. The first
+/// is what the line is (0 blank, 1 a comment, 2 prose, 3 a cell; -1 if it isn't UTF-8); a comment or prose starts
+/// at the second. A cell: the address, contents, label, opcode and operand, each its start and end, then where the
+/// comment starts.
+#[no_mangle]
+pub extern "C" fn hb_tokenize(n: u32) -> *const i32 {
+    with(|s| {
+        let mut c = [-1; 12];
+        if let Some(t) = text(s, n) {
+            let at = |b: usize| assemble::utf16(t, b) as i32;
+            match assemble::tokenize(t) {
+                Line::Blank => c[0] = 0,
+                Line::Comment(from) => c[..2].copy_from_slice(&[1, at(from)]),
+                Line::Prose(from) => c[..2].copy_from_slice(&[2, at(from)]),
+                Line::Cell(cell) => {
+                    c[0] = 3;
+                    let spans = [Some(cell.address), cell.contents, cell.label, cell.opcode, cell.operand];
+                    for (k, r) in spans.iter().enumerate() {
+                        if let Some(r) = r {
+                            c[1 + 2 * k] = at(r.start);
+                            c[2 + 2 * k] = at(r.end);
+                        }
+                    }
+                    if let Some(from) = cell.comment {
+                        c[11] = at(from);
+                    }
+                }
+            }
+        }
+        s.columns = c;
+        s.columns.as_ptr()
+    })
 }

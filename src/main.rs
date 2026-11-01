@@ -1,5 +1,5 @@
 //! burn: run a CARDIAC deck, and see how fast this machine runs CARDIAC. It only runs things: decks are made from
-//! listings elsewhere (CARDIAC Code's Export). A file is a deck if it looks like one: it starts with the loader.
+//! listings by carc (or Cardigan's Export). A file is a deck if it looks like one: it starts with the loader.
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -79,7 +79,7 @@ fn run(file: &str, input: Option<Vec<i32>>) {
         .unwrap_or_else(|| {
             die(format!(
                 "{file}: not a CARDIAC deck (a deck starts with the loader's cards, 002 and 800): make one from a \
-                 listing in CARDIAC Code"
+                 listing with carc"
             ))
         });
     let dir = Path::new(file)

@@ -9,7 +9,8 @@ standard CARDIAC, exactly as the manual and Brian Stuart's simulator define it, 
 to go. That is the premise: nothing a program can see differs from the cardboard machine, and everything it can't
 see is tuned.
 
-[Install](#install) • [Quick start](#quick-start) • [Decks](#decks) • [How fast](#how-fast) • [As a library](#as-a-library)
+[Install](#install) • [Quick start](#quick-start) • [Decks](#decks) • [carc](#carc) • [How fast](#how-fast) •
+[As a library](#as-a-library)
 
 ## Install
 
@@ -45,12 +46,33 @@ starting with `#` are comments): the two-card loader, 002 and 800; an address ca
 then the pair 002 8xx that starts the program at xx. Any CARDIAC simulator can load one. `burn` knows a deck by what
 is in it, the loader's cards first, not by its name; by convention it is `NAME.deck`.
 
-To make a deck, write the program as a listing in [CARDIAC Code](https://lab.strangequery.com/cardiac/code/), the
-CARDIAC IDE in your browser, and press Export: `NAME.cardiac` becomes `NAME.deck`.
+To make a deck, write the program as a listing and assemble it with [`carc`](#carc), or write it in
+[CARDIAC Code](https://lab.strangequery.com/cardiac/code/), the CARDIAC IDE in your browser, and press Export:
+`NAME.cardiac` becomes `NAME.deck`.
 
 A program too big for memory comes in several decks: `NAME.deck`, `NAME.2.deck`, and so on. A deck stops with the
 PC on the number of the deck to load next (HRS n; on 00 it is done), and the operator, here `burn`, puts that deck in
 the reader and starts the loader at 00: any deck, in any order, as often as asked.
+
+## carc
+
+`carc` is the assembler: it makes a listing into a deck. A listing has a cell a line, in Brian Stuart's six
+columns, `ADDRESS CONTENTS LABEL OPCODE OPERAND COMMENT`, or the manual's `ADDRESS CONTENTS COMMENT`; the contents
+may be left out, and are then worked out from the opcode and the operand (a number, `label` or `label+N`). Lines
+that aren't cells (titles, prose, `;` and `#` comments) are skipped.
+
+    carc count.cardiac                # writes count.deck beside it
+    carc count.cardiac -o out.deck --start 10
+
+The deck starts at `--start`, or else where the listing says: a `Start at NN.` line, the line labelled `start`, its
+first instruction. What is wrong is reported the way a compiler reports it, and no deck is written while there are
+errors:
+
+    count.cardiac:4:8: error: unknown label nowhere
+    count.cardiac:6:4: warning: contents +199, but CLA 20 is +120: loading the contents
+
+Contents that disagree with the opcode and operand are a warning: the contents are what load. CARDIAC Code reads
+listings with the same assembler (`heartburn::assemble`), so a listing assembles the same in both.
 
 ## How fast
 
@@ -100,13 +122,13 @@ cost nothing per instruction, and a plain run doesn't pay for any of it.
 
 ## WebAssembly
 
-`wasm/` builds HEARTBURN for a web page: the `Machine` behind a plain C API, no dependencies. It is the engine
-inside CARDIAC Code.
+`wasm/` builds HEARTBURN for a web page: the `Machine` and the assembler behind a plain C API, no dependencies. It
+is the engine inside CARDIAC Code, and its assembler.
 
     rustup target add wasm32-unknown-unknown    # once
     cd wasm && cargo build --release --lib --target wasm32-unknown-unknown
 
-gives `wasm/target/wasm32-unknown-unknown/release/heartburn_wasm.wasm`, about 35 KB. `wasm/test/compare.py` checks
+gives `wasm/target/wasm32-unknown-unknown/release/heartburn_wasm.wasm`, about 90 KB. `wasm/test/compare.py` checks
 it against native HEARTBURN, session by session, in a browser.
 
 ## License
