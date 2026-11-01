@@ -323,13 +323,14 @@ struct Session<'a> {
 }
 
 impl Session<'_> {
-    /// Run up to `n` instructions: stop at a breakpoint (not on the first: a run from one runs it), after an
-    /// instruction writes a watched cell, at a halt, or at an INP with no card. `over`: a JMP counts as one, the
-    /// routine it calls run through (`through`).
-    fn go(&mut self, n: u64, over: bool) -> Stop {
+    /// Run up to `n` instructions: stop at a breakpoint (not on the first, so a continue from one goes on, unless
+    /// `fresh`: `run` stops on a breakpoint at the program's start, as gdb does), after an instruction writes a
+    /// watched cell, at a halt, or at an INP with no card. `over`: a JMP counts as one, the routine it calls run
+    /// through (`through`).
+    fn go(&mut self, n: u64, over: bool, fresh: bool) -> Stop {
         for i in 0..n {
             let pc = self.m.pc();
-            if i > 0 && self.breaks[pc] {
+            if (i > 0 || fresh) && self.breaks[pc] {
                 return Stop::Break;
             }
             let w = self.m.cell(pc);
@@ -389,13 +390,13 @@ impl Session<'_> {
     }
 
     /// Run, and say where it stopped: the next instruction, as the listing has it.
-    fn run_for(&mut self, n: u64, stepping: bool, over: bool) {
+    fn run_for(&mut self, n: u64, stepping: bool, over: bool, fresh: bool) {
         if self.halted {
             println!("the program has halted: run starts it again");
             return;
         }
         let from = self.m.steps();
-        match self.go(n, over) {
+        match self.go(n, over, fresh) {
             Stop::Done if stepping => {}
             Stop::Done | Stop::Limit => println!(
                 "still running after {} instructions (--limit): continue goes on",
@@ -463,7 +464,7 @@ impl Session<'_> {
         }
     }
 
-    /// A word, and what it is as an instruction.
+    /// A word, and what it is as an instruction (not for a cell the listing calls DATA).
     fn print(&self, what: &str) -> Result<(), String> {
         match what {
             "acc" => println!("acc = {:+05}", self.m.acc()),
@@ -471,12 +472,15 @@ impl Session<'_> {
             _ => {
                 let c = self.p.place(what)?;
                 let w = self.m.cell(c);
-                let as_code = if w < 0 {
-                    "negative: skipped if run".to_string()
+                let data = self.p.row_of[c].is_some_and(|r| self.p.rows[r].op == Some("DATA"));
+                let as_code = if data {
+                    String::new()
+                } else if w < 0 {
+                    "    negative: skipped if run".to_string()
                 } else {
-                    format!("{} {:02}", OPS[(w / 100) as usize], w % 100)
+                    format!("    {} {:02}", OPS[(w / 100) as usize], w % 100)
                 };
-                println!("{} = {}    {as_code}", self.name(c), written(w));
+                println!("{} = {}{as_code}", self.name(c), written(w));
             }
         }
         Ok(())
@@ -510,9 +514,9 @@ impl Session<'_> {
         match cmd {
             "run" | "r" => {
                 self.restart();
-                self.run_for(self.limit, false, false)
+                self.run_for(self.limit, false, false, true)
             }
-            "continue" | "c" => self.run_for(self.limit, false, false),
+            "continue" | "c" => self.run_for(self.limit, false, false, false),
             "step" | "s" | "next" | "n" => {
                 let n = match args {
                     [] => 1,
@@ -521,7 +525,7 @@ impl Session<'_> {
                         .map_err(|_| format!("{cmd} {n}: not a number of instructions"))?,
                     _ => return Err(format!("{cmd} [N]")),
                 };
-                self.run_for(n, true, matches!(cmd, "next" | "n"))
+                self.run_for(n, true, matches!(cmd, "next" | "n"), false)
             }
             "break" | "b" => {
                 let c = self.p.place(one("PLACE")?)?;

@@ -63,9 +63,12 @@ fn a_breakpoint_by_label_stops_before_its_instruction() {
     );
     // b - a went negative: 3 - 5
     assert!(out.contains("pc 42  acc -0002  steps "), "{out}");
-    assert!(out.contains("91 (a) = 005    INP 05\n"), "{out}");
-    assert!(out.contains("92 (b) = 003    INP 03\n"), "{out}");
+    assert!(out.contains("91 (a) = 005\n"), "{out}");
+    assert!(out.contains("92 (b) = 003\n"), "{out}");
     assert!(out.contains("acc = -0002\n"), "{out}");
+    // a cell the listing calls code is decoded too
+    let (_, out, _) = script(SORTEM, &["p swap"], &[]);
+    assert!(out.contains("42 (swap) = 189    CLA 89\n"), "{out}");
     // continuing from the breakpoint runs its instruction, and the rest, to the halt
     let (ok, out, _) = script(SORTEM, &["b swap", "r", "c"], &["5", "3"]);
     assert!(ok, "{out}");
@@ -73,6 +76,20 @@ fn a_breakpoint_by_label_stops_before_its_instruction() {
     assert_eq!(cards, ["3", "5", "4", "3", "5", "5"], "{out}");
     assert!(
         out.ends_with("halted: HRS in cell 82, after 128 instructions\n"),
+        "{out}"
+    );
+}
+
+/// `run` stops on a breakpoint at the program's first instruction, before it runs (as gdb does); `continue` from a
+/// breakpoint runs its instruction.
+#[test]
+fn run_stops_on_a_breakpoint_at_the_start() {
+    let f = dir("start").join("count.cardiac");
+    std::fs::write(&f, "10 530 start OUT n\n11 130 CLA n\n12 700 SUB 00\n13 316 TAC done\n14 630 STO n\n15 810 JMP start\n16 900 done HRS 00\n30 002 n DATA 2\n").unwrap();
+    let (ok, out, err) = script(f.to_str().unwrap(), &["break start", "run", "p n", "c"], &[]);
+    assert!(ok && err.is_empty(), "{out}{err}");
+    assert!(
+        out.starts_with("breakpoint at 10 (start)\nbreakpoint, cell 10\n10   530  start    OUT  n\n30 (n) = 002\nout: 2\nbreakpoint, cell 10\n"),
         "{out}"
     );
 }
@@ -126,7 +143,7 @@ fn piped_commands_step_list_and_repeat() {
     );
     assert!(out.contains("\n83:  001  000  002  197  000\n"), "{out}");
     // nothing after quit; a command that isn't one said on standard error
-    assert!(out.ends_with("84 (k0) = 007    INP 07\n"), "{out}");
+    assert!(out.ends_with("84 (k0) = 007\n"), "{out}");
     assert_eq!(err, "frobnicate: not a command (help lists them)\n");
 }
 
