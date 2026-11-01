@@ -9,7 +9,7 @@ standard CARDIAC, exactly as the manual and Brian Stuart's simulator define it, 
 to go. That is the premise: nothing a program can see differs from the cardboard machine, and everything it can't
 see is tuned.
 
-[Install](#install) • [Quick start](#quick-start) • [Decks](#decks) • [carc](#carc) • [How fast](#how-fast) •
+[Install](#install) • [Quick start](#quick-start) • [Decks](#decks) • [carc](#carc) • [ekg](#ekg) • [How fast](#how-fast) •
 [As a library](#as-a-library)
 
 ## Install
@@ -88,6 +88,72 @@ listings with the same assembler (`heartburn::assemble`), so a listing assembles
 `carc --help` lists the options. It exits with 0 when the deck is written, 1 when the listing has errors or a file
 can't be read or written (`carc: count.cardiac: No such file or directory`), and 2 for a mistake on the command line,
 as `burn` does.
+
+## ekg
+
+`ekg` is the debugger and the profiler. It takes a listing (assembled as `carc` assembles it, its labels and
+comments kept) or a deck (loaded by its own loader, as `burn` loads it, and disassembled), told apart by what is in
+it, and the program's input after it:
+
+    ekg mul.cardiac -- 6 7                 # debug: commands on standard input
+    ekg --batch mul.cardiac -x 'break 17' -x run -x 'p p'
+    ekg --profile mul.cardiac -- 6 7       # run it to the end and report where the instructions went
+
+The commands are gdb's where gdb has one: `run` (`r`), `continue` (`c`), `step` (`s`) and `next` (`n`) with a
+count, `break` (`b`), `watch`, `delete` (`d`), `info break`, `info registers` (`i r`), `print` (`p`), `x`, `list`
+(`l`), `set`, `quit` (`q`), `help` (`h`); and `input CARDS`, which puts cards in the reader. A place is a cell, a
+label or `label+N`. A breakpoint stops before its cell's instruction runs; a watch stops after an instruction
+writes its cell, which is how to catch a program rewriting its own code. `next` runs a routine a JMP calls through,
+to the cell after the JMP. An empty line repeats the last step, next or continue. Each stop shows the next
+instruction as the listing has it, decoded afresh where the program has rewritten the cell; what the program
+punches is printed as it is punched, each card on a line starting `out:`; an INP with no card left stops and waits
+for `input`. Commands given with `-x` (`--eval-command`) run first; with `--batch` ekg then exits, else it reads
+more from standard input.
+
+    $ ekg --batch mul.cardiac -x 'break 17' -x run -x 'watch p' -x c -x 'info r' -- 6 7
+    breakpoint at 17
+    breakpoint, cell 17
+    17   230           ADD  a
+    watching 32 (p)
+    watch, cell 32 (p): 000 -> 006, written by cell 18
+    19   812           JMP  loop
+    pc 19  acc +0006  steps 9  reader []
+
+`--profile` runs the program to the end and prints a report on standard output, the program's cards going to
+standard error: how many instructions it ran, the hottest cells, every cell of the listing with its runs, the cells
+the program wrote (and which of those it ran too: code it rewrites), and the listed instructions it never ran.
+With no input given, its cards are read from standard input, as `burn` reads them.
+
+    $ ekg --profile mul.cardiac -- 6 7 2>/dev/null
+    mul.cardiac: halted after 63 instructions, in 0.000 s (7.8 million a second)
+
+    Hottest cells:
+               8  12.70%  12   131  loop     CLA  b        ; b goes down to 0
+               8  12.70%  13   733           SUB  one
+               ...
+
+    The listing, each cell's runs:
+               1   1.59%  10   030  start    INP  a
+               1   1.59%  11   031           INP  b
+               8  12.70%  12   131  loop     CLA  b        ; b goes down to 0
+               ...
+               1   1.59%  21   900           HRS  00
+                          22   810           JMP  start    ; never run
+                          30   006  a        DATA 6
+               ...
+
+    Cells written by the program:
+      30  a        written          1
+      31  b        written          8
+      32  p        written          7
+      99           written          7  the way back JMP leaves
+
+    Listed instructions never run:
+      22   810           JMP  start    ; never run
+
+A run stops at 1,000,000,000 instructions unless `--limit=N` says otherwise; `--start=NN` starts a listing
+somewhere else. ekg drives the machine an instruction at a time to see each one: it profiles about 270 million
+instructions a second, a quarter of `burn`'s speed, and `burn` pays nothing for it. `ekg --help` has the rest.
 
 ## How fast
 
