@@ -32,7 +32,7 @@ fn carc_makes_a_deck_burn_runs() {
     let deck = dir("add").join("add.deck");
     let (ok, _, said) = carc(&[
         "tests/manual/add.cardiac",
-        "--start",
+        "--start-at",
         "17",
         "-o",
         deck.to_str().unwrap(),
@@ -175,8 +175,8 @@ fn command_line_mistakes_are_reported_the_gnu_way_and_exit_2() {
         (&[], "no input file"),
         (&["a", "b"], "extra operand 'b'"),
         (
-            &["-s", "100", "x"],
-            "invalid cell '100' for '--start': a cell is 00 to 99",
+            &["--start-at", "100", "x"],
+            "invalid cell '100' for '--start-at': a cell is 00 to 99",
         ),
     ] {
         let (code, printed, said) = carc_in(args, "");
@@ -200,9 +200,16 @@ fn options_long_short_bundled_or_after_the_file() {
     for (n, args) in [
         (
             "a.deck",
-            vec![add.clone(), "--start=17".into(), format!("--output={}", out("a.deck"))],
+            vec![
+                add.clone(),
+                "--start-at=17".into(),
+                format!("--output={}", out("a.deck")),
+            ],
         ),
-        ("b.deck", vec!["-s17".into(), "-o".into(), out("b.deck"), add.clone()]),
+        (
+            "b.deck",
+            vec!["--start-at=17".into(), "-o".into(), out("b.deck"), add.clone()],
+        ),
         (
             "c.deck",
             vec!["--st".into(), "17".into(), add.clone(), format!("-o{}", out("c.deck"))],
@@ -227,7 +234,7 @@ fn options_long_short_bundled_or_after_the_file() {
 #[test]
 fn a_listing_from_standard_input_and_a_deck_to_standard_output() {
     let listing = std::fs::read_to_string("tests/manual/add.cardiac").unwrap();
-    let (code, printed, said) = carc_in(&["-", "-s", "17"], &listing);
+    let (code, printed, said) = carc_in(&["-", "--start-at", "17"], &listing);
     assert_eq!(code, 0, "{said}");
     assert!(
         printed.starts_with("# <stdin> on cards, for the loader; it starts at 17\n"),
@@ -242,7 +249,7 @@ fn a_listing_from_standard_input_and_a_deck_to_standard_output() {
         "<stdin>:1:8: error: unknown label x\ncarc: <stdin>: not assembled: no deck written\n"
     );
     // -o - for a file
-    let (code, printed, _) = carc_in(&["tests/manual/add.cardiac", "-s", "17", "-o", "-"], "");
+    let (code, printed, _) = carc_in(&["tests/manual/add.cardiac", "--start-at", "17", "-o", "-"], "");
     assert_eq!(code, 0);
     assert!(
         printed.starts_with("# add.cardiac on cards, for the loader; it starts at 17\n"),

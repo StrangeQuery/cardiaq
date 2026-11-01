@@ -21,12 +21,12 @@ contents may be left out: they are worked out from the opcode and operand), or t
 COMMENT. Lines that aren't cells (titles, prose, ; and # comments) are skipped. With FILE -, the listing is read
 from standard input.
 The deck is the loader's 002 and 800, an address card and a contents card for each cell, then 002 8NN to start
-the program at NN: where --start says, or else where the listing says (a \"Start at NN.\" line, the line labelled
+the program at NN: where --start-at says, or else where the listing says (a \"Start at NN.\" line, the line labelled
 start, its first instruction).
 
   -o, --output=FILE  write the deck to FILE (- for standard output); by default NAME.deck beside
                        NAME.cardiac, or standard output for a listing read from standard input
-  -s, --start=NN     start the program at cell NN
+      --start-at=NN  start the program at cell NN
   -h, --help         display this help and exit
       --version      output version information and exit
 
@@ -120,8 +120,8 @@ fn main() {
             arg: true,
         },
         getopt::Opt {
-            short: Some('s'),
-            long: "start",
+            short: None,
+            long: "start-at",
             arg: true,
         },
         getopt::Opt {
@@ -154,7 +154,7 @@ fn main() {
                 start = Some(cell.unwrap_or_else(|| {
                     getopt::usage_error(
                         PROG,
-                        format!("invalid cell '{value}' for '--start': a cell is 00 to 99"),
+                        format!("invalid cell '{value}' for '--start-at': a cell is 00 to 99"),
                     )
                 }));
             }

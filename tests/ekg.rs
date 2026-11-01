@@ -247,7 +247,7 @@ fn a_deck_is_loaded_by_its_loader_and_disassembled() {
         env!("CARGO_BIN_EXE_carc"),
         &[
             "tests/manual/add.cardiac",
-            "--start",
+            "--start-at",
             "17",
             "-o",
             deck.to_str().unwrap(),

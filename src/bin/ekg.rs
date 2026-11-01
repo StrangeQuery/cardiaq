@@ -36,7 +36,7 @@ read from standard input, each when an INP asks for it, as burn reads them.
   -q, --quiet, --silent       no introduction
       --profile               profile instead of debugging
       --limit=N               stop a run after N instructions (default 1000000000)
-      --start=NN              start a listing at cell NN (default: where carc would start it)
+      --start-at=NN           start a listing at cell NN (default: where carc would start it)
       --help                  display this help and exit
       --version               output version information and exit
 
@@ -838,7 +838,7 @@ const LONG: [(&str, bool); 9] = [
     ("silent", false),
     ("profile", false),
     ("limit", true),
-    ("start", true),
+    ("start-at", true),
     ("help", false),
     ("version", false),
 ];
@@ -936,9 +936,9 @@ impl Options {
                     .filter(|&n| n > 0)
                     .ok_or(format!("invalid --limit '{v}': a number of instructions"))?
             }
-            "start" => {
+            "start-at" => {
                 let cell = v.parse().ok().filter(|&c: &usize| c < 100 && v.len() <= 2);
-                self.start = Some(cell.ok_or(format!("invalid --start '{v}': a cell, 00 to 99"))?)
+                self.start = Some(cell.ok_or(format!("invalid --start-at '{v}': a cell, 00 to 99"))?)
             }
             "help" => {
                 print!("{}\n{}", usage(), help());
@@ -1011,7 +1011,7 @@ mod tests {
             "c",
             "--prof",
             "--lim=50",
-            "--start",
+            "--start-at",
             "10",
             "--",
             "-5",
@@ -1032,9 +1032,9 @@ mod tests {
         assert_eq!(err(&["--batch=1"]), "option '--batch' doesn't allow an argument");
         assert_eq!(
             err(&["--s"]),
-            "option '--s' is ambiguous; possibilities: '--silent' '--start'"
+            "option '--s' is ambiguous; possibilities: '--silent' '--start-at'"
         );
-        assert!(err(&["--start=100"]).starts_with("invalid --start"));
+        assert!(err(&["--start-at=100"]).starts_with("invalid --start-at"));
     }
 
     #[test]
