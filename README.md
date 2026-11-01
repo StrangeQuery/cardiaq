@@ -316,11 +316,6 @@ M5 Ultra, the same program on the CARDIAC emulators that could be built and run 
 That is per core: a CARDIAC program is one instruction after another, so one run uses one core, and separate runs
 go side by side on as many cores as the machine has.
 
-On real programs, 109 compiled CARDIAC machines (4.5 billion instructions, every card checked against the same
-programs compiled natively), it runs about 760 million a second: 8 times slower than native Rust doing the
-same work, with each CARDIAC instruction doing a fraction of what one native instruction does. (It started at 510
-million, 12 times; the first round of tuning is in the history.)
-
 How it gets there, so far: each cell's instruction is decoded once and kept beside its value, decoded again only
 when the cell is written (CARDIAC programs rewrite their own code all the time, to index arrays), from a 4 KB table
 of every word's decoding, for 100 cells; the accumulator wraps by a compare, not a division; JMP writes cell 99
