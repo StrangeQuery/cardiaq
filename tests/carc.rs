@@ -53,6 +53,28 @@ fn carc_makes_a_deck_burn_runs() {
     assert!(ok && printed == "579\n", "{printed} {said}");
 }
 
+/// A program in two decks carc made, each with carc's `#` lines at the top: burn goes on into the second (it once
+/// took the comments for the one-file form and stopped after the first deck, printing nothing).
+#[test]
+fn burn_goes_on_into_the_second_deck_carc_made() {
+    let d = dir("sortem");
+    let t = |n: &str| d.join(n).to_str().unwrap().to_string();
+    for (listing, deck) in [("sortem-1", "sortem.deck"), ("sortem-2", "sortem.2.deck")] {
+        let (ok, _, said) = carc(&[&format!("tests/sortem/{listing}.cardiac"), "-o", &t(deck)]);
+        assert!(ok, "{said}");
+    }
+    assert!(std::fs::read_to_string(t("sortem.deck")).unwrap().starts_with('#'));
+    let input: Vec<String> = (1..=35).rev().map(|n| n.to_string()).collect();
+    let mut args = vec![t("sortem.deck"), "--".to_string()];
+    args.extend(input);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (ok, printed, said) = run(env!("CARGO_BIN_EXE_burn"), &args);
+    assert!(ok, "{said}");
+    let cards: Vec<i32> = printed.lines().map(|l| l.parse().unwrap()).collect();
+    assert_eq!(&cards[..35], (1..=35).collect::<Vec<_>>().as_slice(), "sorted");
+    assert_eq!(&cards[35..], [18, 1, 35, 18], "mean, min, max, median");
+}
+
 #[test]
 fn the_deck_goes_beside_the_listing_and_starts_where_it_says() {
     let d = dir("beside");

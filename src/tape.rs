@@ -143,7 +143,9 @@ impl Tape {
         let read = |p: &Path| std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
         let text = read(path)?;
         let mut tape = Tape::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-        if text.lines().any(|l| l.trim_start().starts_with('#')) {
+        // the one-file form is known by its `# phase` and `# resource` lines; other `#` lines are only comments, as
+        // carc writes at the top of a deck, and such a deck's tapes 2, 3, ... are beside it as any plain deck's are
+        if tape.phases.len() > 1 || !tape.slots.is_empty() {
             return Ok(tape);
         }
         for n in 2.. {
