@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/cardiaq.png" alt="cardiaq" width="640"></p>
+
 # cardiaq
 
 Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a debugger, and a _stupid_ fast runtime.
