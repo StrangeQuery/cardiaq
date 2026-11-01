@@ -23,6 +23,11 @@ path = "src/main.rs"
 name = "carc"
 path = "src/bin/carc.rs"
 
+# the debugger and profiler: step a listing or a deck, breakpoints and watches; or count where its instructions go
+[[bin]]
+name = "ekg"
+path = "src/bin/ekg.rs"
+
 # The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Not installed by
 # `cargo install heartburn` (it needs the feature); the tests build it.
 [[bin]]
