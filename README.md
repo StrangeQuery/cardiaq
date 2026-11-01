@@ -1,42 +1,47 @@
 # cardiaq
 
-Tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a runtime and a debugger, made to work the way
-gcc and gdb do.
+Modern tools for CARDIAC, the 1968 Bell Labs cardboard computer: an assembler, a runtime and a debugger
 
-CARDIAC (the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman) was a computer you
-worked by hand: 100 cells of three decimal digits, a four-digit accumulator, ten instructions, and a paper bug you
-slid along as the program counter. It was made to teach how a computer works, and it still does: the whole machine
-fits on one sheet, and every trick a real machine needs (loops, subroutines, arrays, a loader) has to be built from
-those ten instructions in plain sight.
+[CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation)
+(the CARDboard Illustrative Aid to Computation, by David Hagelbarger and Saul Fingerman) was a computer you
+worked by hand: 100 cells of three decimal digits, a four-digit accumulator, ten instructions, all worked on
+strips of paper.
 
-cardiaq is the toolkit for writing CARDIAC programs on a real computer. Its engine, HEARTBURN, runs standard CARDIAC
-exactly as the manual and Brian Stuart's simulator define it, about a billion instructions a second.
+cardiaq is a modern toolkit for writing, debugging, and running CARDIAC programs on a real computer.
+Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second.
 
-[What you can do](#what-you-can-do) • [What's in it](#whats-in-it) • [Install](#install) •
-[Walkthrough](#walkthrough) • [CARDIAC in one page](#cardiac-in-one-page) • [carc](#carc) • [burn](#burn) •
-[ekg](#ekg) • [How fast](#how-fast) • [As a library](#as-a-library) • [WebAssembly](#webassembly)
+[What you can do](#what-you-can-do-with-this-sdk) • [Cardigan](#cardigan) • [What's in it](#whats-in-this-repo) •
+[Install](#install) • [Walkthrough](#walkthrough) • [CARDIAC in one page](#cardiac-in-one-page) • [carc](#carc) •
+[burn](#burn) • [ekg](#ekg) • [How fast](#how-fast) • [As a library](#as-a-library)
 
-## What you can do
+## What you can do with this SDK
 
-- **Write CARDIAC programs** as listings, the six columns of Brian Stuart's CARDIAC page or the 1968 manual's own
-  tables, and assemble them into decks: the cards CARDIAC loads, which any CARDIAC simulator can run.
+- **Write CARDIAC programs** as listings using the six column format from the 1968 manual (and further popularized on 
+  [Brian Stuart's CARDIAC page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html)).
+
+- **Assemble them into decks**: the cards CARDIAC loads, which any CARDIAC simulator can run.
+
 - **Run them**, from the command line or in a pipeline, with their input from the command line or standard input.
-  A program too big for the 100 cells runs as several decks, each loading the next.
-- **Debug them** with breakpoints by label, single steps, and watches that catch a program rewriting its own code,
-  which CARDIAC programs do all the time.
-- **Profile them**: where the instructions went, the hottest loop, the code that never ran.
-- **Build on them**: the engine and the assembler are a Rust library, and a WebAssembly module for a web page.
-  [Cardigan](https://lab.strangequery.com/cardigan/), the CARDIAC IDE in your browser, is built on them.
 
-## What's in it
+- **Debug them** with breakpoints by label, single steps, and watches that catch a program rewriting its own code.
+
+- **Profile them**: where the instructions went, the hottest loop, the code that never ran.
+
+- **Build on them**: everything you need is open source, in this repo.
+
+
+## Cardigan
+[Cardigan](https://lab.strangequery.com/cardigan/) is a full IDE that lets you develop, run and debug CARDIAC programs 
+in your browser. Cardigan is built on a WebAssembly build of the `heartburn` library.
+
+## What's in this repo
 
 | | | like |
 |---|---|---|
-| [`carc`](#carc) | the assembler: a listing (`NAME.cardiac`) into a deck (`NAME.deck`) | `gcc`, `as` |
-| [`burn`](#burn) | the runtime: runs a deck | `java`, `dotnet` |
-| [`ekg`](#ekg) | the debugger and profiler: a listing or a deck | `gdb`, `perf` |
+| [`carc`](#carc) | the assembler: compiles six column source code (`NAME.cardiac`) into decks (`NAME.deck`) | `gcc`, `as` |
+| [`burn`](#burn) | the runtime: runs compiled deck in a fast interpreter | `java`, `dotnet` |
+| [`ekg`](#ekg) | Debugger and profiler. | `gdb`, `perf` |
 | [`heartburn`](#as-a-library) | the Rust library under all three: the machine, the assembler, decks | |
-| [`wasm/`](#webassembly) | the machine and the assembler as WebAssembly, for a web page | |
 
 The three commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
@@ -44,9 +49,8 @@ success, 1 for failure, 2 for a mistake on the command line.
 
 ## Install
 
-Prebuilt `burn`, `carc` and `ekg` for macOS, Linux and Windows come with the first release, through Homebrew,
-winget and the [releases](https://github.com/StrangeQuery/cardiaq/releases). Until then, build them from source,
-with [Rust](https://rustup.rs) installed:
+Prebuilt `burn`, `carc` and `ekg` for macOS, Linux and Windows are planned, through Homebrew and winget.
+Until then, you can build them from source, with [Rust](https://rustup.rs) installed:
 
     git clone https://github.com/StrangeQuery/cardiaq
     cd cardiaq
@@ -56,7 +60,20 @@ The three commands are then in `target/release/`; put them on your PATH.
 
 ## Walkthrough
 
-A program that counts down from 5. Save it as `countdown.cardiac`:
+cardiaq uses the six-column assembly language format documented on [Brian Stuart's page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html):
+
+* **Address**: the cell, 00 to 99. Cell 00 is fixed at 001, the loader uses 01 and 02 while it reads the deck in,
+  and every JMP writes cell 99.
+* **Contents**: a number from -999 to 999. It can be left out, and is then worked out from the opcode and operand.
+* **Label**: optional, a name for the cell, mostly used for jumps and data.
+* **Opcode**: the instruction's name. It is redundant: the first digit of the contents says the same thing.
+* **Operand**: a cell, a label, or `label+N`.
+* **Comment**: anything on the rest of the line.
+
+The format is a little less powerful than Jason Whittington's [cardiasm](https://github.com/jawhitti/Cardiac), but it
+is a _lot_ more widely used.
+
+A program that counts down from 5 in this format. Save it as `countdown.cardiac`:
 
     ; Countdown: prints 5, 4, 3, 2, 1, 0 and stops.
     ; Start at 10.
@@ -70,8 +87,8 @@ A program that counts down from 5. Save it as `countdown.cardiac`:
     16   900  done   HRS  00
     30   005  n      DATA 5      counts down from here
 
-Each line is a cell: its address, its contents, a label, the instruction as an opcode and an operand, a comment. The
-contents column may be left out; `carc` works it out from the opcode and the operand.
+(The file name doesn't really matter; `.cardiac` is just a convention in this SDK.)
+
 
 **Assemble it.** `carc` writes `countdown.deck` beside it:
 
@@ -89,8 +106,9 @@ contents column may be left out; `carc` works it out from the opcode and the ope
     002
     810
 
-That is the program as CARDIAC loads it: two cards that make a loader, then an address card and a contents card for
-each cell, then a jump to the start.
+The first two cards, `002` and `800`, start the bootstrap loader, and the address/contents pairs after them fill the
+cells. carc generates them for you. That process ends with a JMP to the start address. In this
+program that is cell 10.
 
 **Run it.**
 
@@ -103,8 +121,9 @@ each cell, then a jump to the start.
     0
          halted after 65 instructions
 
-What the program prints goes to standard output; how it stopped goes to standard error, so the output pipes cleanly.
-(The 65 includes the loader's instructions, reading the cards in.)
+`burn` reads input from standard input and prints what the program outputs on standard output. How the program
+stopped goes to standard error, so the output pipes cleanly. The count includes the 30 instructions the loader ran to
+read the deck in; `ekg`, below, counts only the program's.
 
 **Make a mistake.** Misspell the label in cell 13 and get cell 11's contents wrong:
 
@@ -173,7 +192,7 @@ program can use. An instruction is three digits: the opcode, then a two-digit ad
 | 2 | `ADD a` | add cell a to the accumulator |
 | 3 | `TAC a` | test the accumulator: if it is negative, jump to a |
 | 4 | `SFT lr` | shift the accumulator l digits left, then r digits right |
-| 5 | `OUT a` | punch cell a on an output card |
+| 5 | `OUT a` | output the value in cell a |
 | 6 | `STO a` | store the accumulator's last three digits in cell a |
 | 7 | `SUB a` | subtract cell a from the accumulator |
 | 8 | `JMP a` | jump to a, first writing 8 and the address after the JMP into cell 99: the way back from a subroutine |
@@ -186,16 +205,16 @@ instructions. That is what `ekg`'s `watch` is for.
 
 `carc` is the assembler: it makes a listing into a deck.
 
-    carc countdown.cardiac                       # writes countdown.deck beside it
-    carc -s 10 -o out.deck countdown.cardiac     # or --start=10 --output=out.deck, before or after the file
-    carc - < countdown.cardiac | burn -          # the listing from standard input, the deck to standard output
+    carc countdown.cardiac                             # writes countdown.deck beside it
+    carc --start-at=10 -o out.deck countdown.cardiac   # options before or after the file
+    carc - < countdown.cardiac | burn -                # the listing from standard input, the deck to standard output
 
 **Listings.** A listing has a cell a line, in Brian Stuart's six columns, `ADDRESS CONTENTS LABEL OPCODE OPERAND
 COMMENT`, or the manual's `ADDRESS CONTENTS COMMENT`. The contents may be left out, and are then worked out from the
 opcode and the operand: a number, a `label`, or `label+N`. `DATA` (or `DAT`) puts a number in a cell. Lines that
 aren't cells (titles, prose, `;` and `#` comments) are skipped.
 
-**Where it starts.** The deck starts the program at `--start`, or else where the listing says: a `Start at NN.`
+**Where it starts.** The deck starts the program at `--start-at`, or else where the listing says: a `Start at NN.`
 line, the line labelled `start`, its first instruction.
 
 **Errors and warnings** are reported the way a compiler reports them, and no deck is written while there are
@@ -204,7 +223,7 @@ errors. Contents that disagree with the opcode and operand are a warning: the co
 | | |
 |---|---|
 | `-o`, `--output=FILE` | write the deck to FILE (`-` for standard output); by default `NAME.deck` beside `NAME.cardiac`, or standard output for a listing read from standard input |
-| `-s`, `--start=NN` | start the program at cell NN |
+| `--start-at=NN` | start the program at cell NN |
 | `-h`, `--help` | display help and exit |
 | `--version` | output version information and exit |
 
@@ -213,21 +232,20 @@ mistake on the command line.
 
 ## burn
 
-`burn` is the runtime: it runs decks, and nothing else.
+`burn` is the runtime, the fastest CARDIAC emulator on the planet today.
 
-    burn countdown.deck              # run it
-    burn add.deck -- 123 456         # its input cards after the deck (the -- is optional)
+    burn countdown.deck              # run a deck
+    burn add.deck -- 123 456         # input cards after the deck (the -- is optional)
     echo 123 456 | burn add.deck     # or on standard input, each card read when an INP asks for it
     carc - < add.cardiac | burn -    # the deck itself from standard input
-    burn bench                       # how fast this machine runs CARDIAC
+    burn bench                       # run diagnostics for how fast this machine runs CARDIAC
 
-**Decks.** A deck is plain text, one card per line (lines starting with `#` are comments): the two-card loader, 002
-and 800; an address card and a value card for each cell; then the pair 002 8xx that starts the program at xx. `burn`
-knows a deck by what is in it, the loader's cards first, not by its name; by convention it is `NAME.deck`.
+**Decks.** A deck is plain text, one card per line (lines starting with `#` are comments). There is no auto-loader,
+so decks must provide their own loading logic as documented on [Brian Stuart's page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html).
 
-**Output.** Each card the program punches is printed as a number on a line of its own, as it is punched. How it
-stopped, and after how many instructions, goes to standard error. For a program whose cards are characters (65 for
-A, 10 for a newline), pipe the output through perl:
+**Output.** Each value the program outputs is printed as a number on a line of its own. How it stopped, and after how
+many instructions, goes to standard error. For a program whose output values are characters (65 for A, 10 for a
+newline), pipe the output through perl:
 
     burn hello.deck | perl -CO -ne 'print chr if $_ >= 0'
 
@@ -276,8 +294,8 @@ program's input after it:
 | `quit`, `q` | leave |
 
 An empty line repeats the last `step`, `next` or `continue`. Each stop shows the next instruction as the listing has
-it, decoded afresh where the program has rewritten the cell. What the program punches is printed as it is punched,
-each card on a line starting `out:`. An INP with no card left stops and waits for `input`.
+it, decoded afresh where the program has rewritten the cell. What the program outputs is printed as it is output,
+each value on a line starting `out:`. An INP with no card left stops and waits for `input`.
 
 **Profiling.** `--profile` runs the program to the end and prints a report on standard output, the program's cards
 going to standard error: how many instructions it ran, the hottest cells, every cell of the listing with its runs, the
@@ -293,7 +311,7 @@ speed, and `burn` pays nothing for it.
 | `-q`, `--quiet`, `--silent` | no introduction |
 | `--profile` | profile instead of debugging |
 | `--limit=N` | stop a run after N instructions (default 1,000,000,000) |
-| `--start=NN` | start a listing at cell NN (default: where `carc` would start it) |
+| `--start-at=NN` | start a listing at cell NN (default: where `carc` would start it) |
 | `--help` | display help and exit |
 | `--version` | output version information and exit |
 
@@ -333,7 +351,7 @@ The crate is `heartburn`: the machine (`cardiac`), the assembler `carc` and Card
 use heartburn::listing::{self, Listing};
 use heartburn::tape::Tape;
 
-// the manual's Program No. 1: read two cards, punch their sum
+// the manual's Program No. 1: read two cards, output their sum
 let read = listing::parse("17 034\n18 035\n19 134\n20 235\n21 636\n22 536\n23 900\n")?;
 let Listing::Memory(cells) = read.listing else { return Err("a deck, not a memory listing".into()) };
 let tape = Tape::one(listing::deck(17, &cells)?);
@@ -343,17 +361,6 @@ let (punched, why, steps) = tape.run(&[2, 3], 1_000)?;   // [5], Halt, 34 instru
 `examples/add.rs` is this, runnable: `cargo run --example add`. `cardiac::run` runs a deck directly, and
 `cardiac::Machine` is the machine a debugger holds: step it, run it to a breakpoint, read and write it. Breakpoints
 cost nothing per instruction, and a plain run doesn't pay for any of it.
-
-## WebAssembly
-
-`wasm/` builds the machine and the assembler for a web page, behind a plain C API, with no dependencies. It is the
-engine inside [Cardigan](https://lab.strangequery.com/cardigan/), and its assembler.
-
-    rustup target add wasm32-unknown-unknown    # once
-    cd wasm && cargo build --release --lib --target wasm32-unknown-unknown
-
-gives `wasm/target/wasm32-unknown-unknown/release/heartburn_wasm.wasm`, about 68 KB. `wasm/test/compare.py` checks
-it against the native machine, session by session, in a browser.
 
 ## License
 
