@@ -19,7 +19,7 @@ fn usage() -> &'static str {
     "\
 Usage: burn [OPTION]... DECK [--] [INPUT]...
   or:  burn bench
-Run a CARDIAC deck: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast.
+Run a CARDIAC deck.
 
 A deck is cards, one a line (lines starting with # are comments), starting with the loader's 002 and 800,
 whatever the file is called; carc makes one from a listing. With DECK -, the deck is read from standard input.

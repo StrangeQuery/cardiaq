@@ -2,7 +2,7 @@
 name = "heartburn"
 version = "0.1.0"
 edition = "2021"
-description = "CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast"
+description = "CARDIAC tools: the carc assembler, the burn runtime, the ekg debugger"
 rust-version = "1.97"
 license = "MIT"
 repository = "https://github.com/StrangeQuery/cardiaq"

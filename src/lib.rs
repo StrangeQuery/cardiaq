@@ -1,4 +1,4 @@
-//! HEARTBURN: CARDIAC, the 1968 Bell Labs cardboard computer, stupid fast. The machine (`cardiac`), its tapes and
+//! HEARTBURN: CARDIAC, stupid fast. The machine (`cardiac`), its tapes and
 //! the `.tape` file they are kept in (`tape`), listings as the 1968 manual and Brian Stuart print them (`listing`),
 //! the assembler `carc` and Cardigan use, a six-column listing made into cells and a deck (`assemble`), and Jason
 //! Whittington's CARDIASM (`cardiasm`), ported from C#.
