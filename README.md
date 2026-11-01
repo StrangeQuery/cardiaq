@@ -128,7 +128,7 @@ is the engine inside CARDIAC Code, and its assembler.
     rustup target add wasm32-unknown-unknown    # once
     cd wasm && cargo build --release --lib --target wasm32-unknown-unknown
 
-gives `wasm/target/wasm32-unknown-unknown/release/heartburn_wasm.wasm`, about 90 KB. `wasm/test/compare.py` checks
+gives `wasm/target/wasm32-unknown-unknown/release/heartburn_wasm.wasm`, about 68 KB. `wasm/test/compare.py` checks
 it against native HEARTBURN, session by session, in a browser.
 
 ## License

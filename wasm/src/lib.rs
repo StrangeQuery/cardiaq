@@ -9,9 +9,9 @@
 //!
 //! The assembler (`heartburn::assemble`) is here too, for the page to read its listings with: it passes text,
 //! UTF-8, through `hb_text`, and gets back JSON (`hb_assemble`), a deck (`hb_deck`), or one line's columns
-//! (`hb_tokenize`). Offsets in what comes back are in UTF-16 units, as the page counts them.
+//! (`hb_tokenize`). Offsets in what comes back are in UTF-16 units, as the page counts them. Its JSON is written by
+//! hand, without `format!`, to keep the module small.
 use std::cell::RefCell;
-use std::fmt::Write;
 
 use heartburn::assemble::{self, Line};
 use heartburn::cardiac::{Event, Machine};
@@ -339,7 +339,8 @@ fn json(out: &mut String, v: Option<&str>) {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
             c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
+                out.push_str(if (c as u32) < 0x10 { "\\u000" } else { "\\u001" });
+                out.push(char::from(b"0123456789abcdef"[c as usize & 15]));
             }
             c => out.push(c),
         }
@@ -349,9 +350,7 @@ fn json(out: &mut String, v: Option<&str>) {
 
 fn number(out: &mut String, v: Option<i64>) {
     match v {
-        Some(v) => {
-            let _ = write!(out, "{v}");
-        }
+        Some(v) => assemble::decimal(out, v, 1),
         None => out.push_str("null"),
     }
 }
@@ -370,19 +369,19 @@ pub extern "C" fn hb_assemble(n: u32) -> i32 {
         };
         let asm = assemble::assemble(t);
         let lines = assemble::lines(t);
-        let mut o = String::new();
-        let _ = write!(o, "{{\"lines\":{},\"start\":", asm.lines);
+        let mut o = String::from("{\"lines\":");
+        number(&mut o, Some(asm.lines as i64));
+        o.push_str(",\"start\":");
         number(&mut o, asm.start.map(|a| a as i64));
         o.push_str(",\"rows\":[");
         for (k, r) in asm.rows.iter().enumerate() {
-            let _ = write!(
-                o,
-                "{}{{\"ln\":{},\"addr\":{},\"contents\":{},\"label\":",
-                if k > 0 { "," } else { "" },
-                r.line,
-                r.addr,
-                r.contents
-            );
+            o.push_str(if k > 0 { ",{\"ln\":" } else { "{\"ln\":" });
+            number(&mut o, Some(r.line as i64));
+            o.push_str(",\"addr\":");
+            number(&mut o, Some(r.addr as i64));
+            o.push_str(",\"contents\":");
+            number(&mut o, Some(r.contents.into()));
+            o.push_str(",\"label\":");
             json(&mut o, r.label.as_deref());
             o.push_str(",\"op\":");
             json(&mut o, r.op);
@@ -394,16 +393,18 @@ pub extern "C" fn hb_assemble(n: u32) -> i32 {
         }
         o.push_str("],\"diagnostics\":[");
         for (k, d) in asm.diagnostics.iter().enumerate() {
-            let line = lines[d.line];
-            let (s16, e16) = (assemble::utf16(line, d.span.start), assemble::utf16(line, d.span.end));
-            let _ = write!(
-                o,
-                "{}{{\"ln\":{},\"s\":{s16},\"e\":{e16},\"msg\":",
-                if k > 0 { "," } else { "" },
-                d.line
-            );
+            let line = lines.get(d.line).copied().unwrap_or_default();
+            o.push_str(if k > 0 { ",{\"ln\":" } else { "{\"ln\":" });
+            number(&mut o, Some(d.line as i64));
+            o.push_str(",\"s\":");
+            number(&mut o, Some(assemble::utf16(line, d.span.start) as i64));
+            o.push_str(",\"e\":");
+            number(&mut o, Some(assemble::utf16(line, d.span.end) as i64));
+            o.push_str(",\"msg\":");
             json(&mut o, Some(&d.message));
-            let _ = write!(o, ",\"warn\":{},\"dup\":{},\"want\":", d.warning, d.duplicate);
+            o.push_str(if d.warning { ",\"warn\":true" } else { ",\"warn\":false" });
+            o.push_str(if d.duplicate { ",\"dup\":true" } else { ",\"dup\":false" });
+            o.push_str(",\"want\":");
             number(&mut o, d.want.map(i64::from));
             o.push('}');
         }

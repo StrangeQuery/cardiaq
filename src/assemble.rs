@@ -14,7 +14,9 @@
 //! contents load.
 //!
 //! Spans are byte offsets into their line. A web page counts in UTF-16 units: `utf16` converts.
-use std::collections::BTreeMap;
+//!
+//! The code is written to stay small in heartburn.wasm: no `format!` (numbers are written by `decimal`), no maps (a
+//! listing has a hundred labels at most: a list will do), and text sliced with `get`, so no slicing can panic.
 use std::ops::Range;
 
 /// The ten opcodes, in order: an opcode's index is its digit.
@@ -103,6 +105,11 @@ fn trim(s: &str) -> &str {
     s.trim_matches(space)
 }
 
+/// A span of a line; spans are always on its characters' boundaries.
+fn at(line: &str, r: Range<usize>) -> &str {
+    line.get(r).unwrap_or_default()
+}
+
 /// The words of a line, and where each is.
 fn words(line: &str) -> Vec<(Range<usize>, &str)> {
     let mut w = vec![];
@@ -110,7 +117,7 @@ fn words(line: &str) -> Vec<(Range<usize>, &str)> {
     for (i, c) in line.char_indices().chain([(line.len(), ' ')]) {
         match (space(c), from) {
             (true, Some(s)) => {
-                w.push((s..i, &line[s..i]));
+                w.push((s..i, at(line, s..i)));
                 from = None
             }
             (false, None) => from = Some(i),
@@ -120,11 +127,15 @@ fn words(line: &str) -> Vec<(Range<usize>, &str)> {
     w
 }
 
+// `#[inline(never)]`, here and on a few others: called from many places, each inlined would make heartburn.wasm
+// bigger, and the assembler no faster that shows
+#[inline(never)]
 fn digits(t: &str) -> bool {
     !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// A number: digits, a sign allowed.
+#[inline(never)]
 fn is_num(t: &str) -> bool {
     digits(t.strip_prefix(['+', '-']).unwrap_or(t))
 }
@@ -230,27 +241,62 @@ pub fn lines(text: &str) -> Vec<&str> {
 }
 
 /// A byte offset into a line, in UTF-16 units.
+#[inline(never)]
 pub fn utf16(line: &str, byte: usize) -> usize {
-    line[..byte].encode_utf16().count()
+    at(line, 0..byte).encode_utf16().count()
+}
+
+/// A number written onto `out` in decimal, `-` first if negative, its digits padded with 0s to `width` (20 at
+/// most): what `format!("{}{:0width$}", sign, v.abs())` writes.
+pub fn decimal(out: &mut String, v: i64, width: usize) {
+    if v < 0 {
+        out.push('-');
+    }
+    // a u64 has 20 digits at most
+    let mut digits = [0u8; 20];
+    let (mut n, mut k, width) = (v.unsigned_abs(), digits.len(), width.min(digits.len()));
+    loop {
+        k -= 1;
+        digits[k] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 && k + width <= digits.len() {
+            break;
+        }
+    }
+    out.extend(digits[k..].iter().map(|&d| char::from(d)));
+}
+
+/// A number as a string (see `decimal`).
+fn num(v: i64, width: usize) -> String {
+    let mut s = String::new();
+    decimal(&mut s, v, width);
+    s
 }
 
 /// A word as the page shows it: a sign, always, and three digits.
+#[inline(never)]
 fn word3(v: i64) -> String {
-    format!("{}{:03}", if v < 0 { '\u{2212}' } else { '+' }, v.abs())
+    let mut s = String::from(if v < 0 { '\u{2212}' } else { '+' });
+    decimal(&mut s, v.abs(), 3);
+    s
 }
 
 /// A word as a listing or a deck writes it: three digits, and `-` if negative.
 pub fn written(v: i32) -> String {
-    format!("{}{:03}", if v < 0 { "-" } else { "" }, v.abs())
+    num(v.into(), 3)
 }
 
+/// The labels defined, and their cells: the first definition of a name is the one.
+type Labels<'a> = Vec<(&'a str, i64)>;
+
 /// An operand's value: a number, or a label's cell (plus N); none for a label not defined.
-fn resolve(operand: &str, labels: &BTreeMap<&str, i64>) -> Option<i64> {
+fn resolve(operand: &str, labels: &Labels) -> Option<i64> {
     if is_num(operand) {
         return Some(value(operand));
     }
     let (name, n) = label_ref(operand)?;
-    Some(labels.get(name)? + if n.is_empty() { 0 } else { value(n) })
+    let &(_, cell) = labels.iter().find(|&&(l, _)| l == name)?;
+    Some(cell + if n.is_empty() { 0 } else { value(n) })
 }
 
 /// Assemble a listing: its cells (those without errors), what is wrong where, and where it starts. Never fails: a
@@ -273,12 +319,15 @@ pub fn assemble(text: &str) -> Assembly {
             .enumerate()
             .filter_map(|(n, l)| if let Line::Cell(c) = l { Some((n, c)) } else { None })
     };
-    let mut labels: BTreeMap<&str, i64> = BTreeMap::new();
+    let mut labels = Labels::new();
     for (n, c) in cells() {
-        let addr = &lines[n][c.address.clone()];
+        let addr = at(lines[n], c.address.clone());
         if let (Some(lb), true) = (&c.label, digits(addr)) {
-            let l = &lines[n][lb.clone()];
-            labels.entry(l.strip_suffix(':').unwrap_or(l)).or_insert(value(addr));
+            let l = at(lines[n], lb.clone());
+            let l = l.strip_suffix(':').unwrap_or(l);
+            if labels.iter().all(|&(name, _)| name != l) {
+                labels.push((l, value(addr)));
+            }
         }
     }
     let mut asm = Assembly {
@@ -287,36 +336,37 @@ pub fn assemble(text: &str) -> Assembly {
         ..Assembly::default()
     };
     let mut seen_addr: [Option<usize>; 100] = [None; 100];
-    let mut seen_label: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut seen_label: Vec<&str> = vec![];
     for (ln, l) in info.iter().enumerate() {
         let line = lines[ln];
         let Line::Cell(c) = l else {
             asm.diagnostics.extend(stray(ln, line));
             continue;
         };
-        let tok = |r: &Option<Range<usize>>| r.as_ref().map(|r| &line[r.clone()]);
+        let tok = |r: &Option<Range<usize>>| r.as_ref().map(|r| at(line, r.clone()));
         // what is wrong with the line: the first thing found
         let mut flag: Option<Diagnostic> = None;
         let mut raise = |msg: String, span: Option<&Range<usize>>| {
             flag.get_or_insert_with(|| error(ln, span.cloned().unwrap_or(0..line.len()), msg));
         };
-        let addr_t = &line[c.address.clone()];
+        let addr_t = at(line, c.address.clone());
         let a = value(addr_t);
         let mut duplicate = false;
         if !digits(addr_t) || a > 99 {
             raise("the address is not a cell 00-99".into(), Some(&c.address));
         } else if let Some(first) = seen_addr[a as usize] {
-            raise(format!("cell {a:02} is on line {} too", first + 1), Some(&c.address));
+            let msg = ["cell ", &num(a, 2), " is on line ", &num(first as i64 + 1, 1), " too"].concat();
+            raise(msg, Some(&c.address));
             duplicate = true;
         } else {
             seen_addr[a as usize] = Some(ln);
         }
         let label = tok(&c.label).map(|l| l.strip_suffix(':').unwrap_or(l));
         if let Some(l) = label {
-            if seen_label.contains_key(l) {
-                raise(format!("label {l} is defined twice"), c.label.as_ref());
+            if seen_label.contains(&l) {
+                raise(["label ", l, " is defined twice"].concat(), c.label.as_ref());
             } else {
-                seen_label.insert(l, ln);
+                seen_label.push(l);
             }
         }
         let op = tok(&c.opcode).map(|o| OPS.into_iter().find(|&p| p == o).unwrap_or("DATA"));
@@ -329,9 +379,9 @@ pub fn assemble(text: &str) -> Assembly {
         if let Some(o) = op {
             match operand.map(|arg| (arg, resolve(arg, &labels))) {
                 None => raise("DATA with no value".into(), c.opcode.as_ref()),
-                Some((arg, None)) => raise(format!("unknown label {arg}"), c.operand.as_ref()),
+                Some((arg, None)) => raise(["unknown label ", arg].concat(), c.operand.as_ref()),
                 Some((arg, Some(v))) if o != "DATA" && !(0..=99).contains(&v) => {
-                    raise(format!("operand {arg} is out of 00-99"), c.operand.as_ref())
+                    raise(["operand ", arg, " is out of 00-99"].concat(), c.operand.as_ref())
                 }
                 Some((_, Some(v))) if o == "DATA" && v.abs() > 999 => {
                     raise("DATA out of -999..999".into(), c.operand.as_ref())
@@ -354,7 +404,7 @@ pub fn assemble(text: &str) -> Assembly {
             } else if wd.trim_start_matches(['+', '-']).len() != 3 {
                 // contents are three digits, in every listing and the manual: a short one is most likely a typo
                 raise(
-                    format!("the contents is three digits ({})", word3(v)),
+                    ["the contents is three digits (", &word3(v), ")"].concat(),
                     c.contents.as_ref(),
                 );
             }
@@ -375,11 +425,18 @@ pub fn assemble(text: &str) -> Assembly {
         }
         if let (Some(w), Some(o), Some(arg), Some(span)) = (want, op, operand, &c.contents) {
             if contents != w {
-                let msg = format!(
-                    "contents {}, but {o} {arg} is {}: loading the contents",
-                    word3(contents),
-                    word3(w)
-                );
+                let msg = [
+                    "contents ",
+                    &word3(contents),
+                    ", but ",
+                    o,
+                    " ",
+                    arg,
+                    " is ",
+                    &word3(w),
+                    ": loading the contents",
+                ]
+                .concat();
                 asm.diagnostics.push(Diagnostic {
                     warning: true,
                     want: Some(w as i32),
@@ -394,7 +451,9 @@ pub fn assemble(text: &str) -> Assembly {
             label: label.map(String::from),
             op,
             operand: op.and(operand).map(String::from),
-            comment: c.comment.map_or(String::new(), |s| trim(&line[s..]).to_string()),
+            comment: c
+                .comment
+                .map_or(String::new(), |s| trim(at(line, s..line.len())).to_string()),
         });
     }
     asm.start = start(&lines, &info, &asm.rows);
@@ -406,18 +465,20 @@ fn stray(ln: usize, line: &str) -> Option<Diagnostic> {
     if !line.split(|c: char| !word_char(c)).any(is_op) {
         return None;
     }
-    let lead = line.len() - line.trim_start_matches(space).len();
-    let rest = &line[lead..];
-    let n = rest.bytes().take_while(u8::is_ascii_digit).count();
-    let after = &rest[n..];
+    let rest = line.trim_start_matches(space);
+    let lead = line.len() - rest.len();
+    let after = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+    let n = rest.len() - after.len();
     let gap = after.len() - after.trim_start_matches(space).len();
     if !(1..=2).contains(&n) || gap == 0 || gap == after.len() {
         return None;
     }
-    let msg = format!(
-        "cell {:02}: not a line of a listing (address, contents, label, opcode, operand, comment): not loaded",
-        value(&rest[..n])
-    );
+    let msg = [
+        "cell ",
+        &num(value(at(rest, 0..n)), 2),
+        ": not a line of a listing (address, contents, label, opcode, operand, comment): not loaded",
+    ]
+    .concat();
     Some(error(ln, lead..line.len(), msg))
 }
 
@@ -471,7 +532,12 @@ pub fn deck(asm: &Assembly, start: usize) -> Vec<i32> {
 
 /// A deck as text: one card a line, three digits each (`-` if negative).
 pub fn deck_text(cards: &[i32]) -> String {
-    cards.iter().map(|&c| written(c) + "\n").collect()
+    let mut s = String::new();
+    for &c in cards {
+        decimal(&mut s, c.into(), 3);
+        s.push('\n');
+    }
+    s
 }
 
 #[cfg(test)]
@@ -553,6 +619,22 @@ mod tests {
         // the loader's own cells aren't on it
         let a = assemble("00 001\n01 002\n03 900\n");
         assert_eq!(deck(&a, 3), [2, 800, 3, 900, 2, 803]);
+    }
+
+    #[test]
+    fn numbers_are_written_as_format_writes_them() {
+        for v in [0, 7, -7, 42, 120, -999, 1000, 123456, i64::MAX, i64::MIN] {
+            for width in [1, 2, 3, 20] {
+                let mut s = String::new();
+                decimal(&mut s, v, width);
+                let sign = if v < 0 { "-" } else { "" };
+                assert_eq!(s, format!("{sign}{:0width$}", v.unsigned_abs()));
+            }
+        }
+        assert_eq!(
+            (written(-52), written(7), word3(-5), word3(120)),
+            ("-052".into(), "007".into(), "\u{2212}005".into(), "+120".into())
+        );
     }
 
     #[test]
