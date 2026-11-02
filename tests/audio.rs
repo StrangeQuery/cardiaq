@@ -1,4 +1,4 @@
-//! xtrack and lub as a user runs them: samples in, a tape, the samples a CARDIAC decodes from it out.
+//! xtrack and lub as a user runs them: samples in, a track, the samples a CARDIAC decodes from it out.
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
@@ -28,20 +28,20 @@ fn tone() -> Vec<i16> {
 fn lub_plays_what_xtrack_codes() {
     let xs = tone();
     let raw: Vec<u8> = xs.iter().flat_map(|s| s.to_le_bytes()).collect();
-    let tape = run(env!("CARGO_BIN_EXE_xtrack"), &[], &raw);
-    assert!(tape.status.success(), "{}", String::from_utf8_lossy(&tape.stderr));
+    let track = run(env!("CARGO_BIN_EXE_xtrack"), &[], &raw);
+    assert!(track.status.success(), "{}", String::from_utf8_lossy(&track.stderr));
     let (cards, expected) = heartburn::audio::encode(&xs);
     let text: String = cards.iter().map(|c| format!("{c}\n")).collect();
-    assert_eq!(String::from_utf8(tape.stdout.clone()).unwrap(), text);
+    assert_eq!(String::from_utf8(track.stdout.clone()).unwrap(), text);
 
-    let played = run(env!("CARGO_BIN_EXE_lub"), &[], &tape.stdout);
+    let played = run(env!("CARGO_BIN_EXE_lub"), &[], &track.stdout);
     assert!(played.status.success(), "{}", String::from_utf8_lossy(&played.stderr));
     let want: Vec<u8> = expected.iter().flat_map(|s| s.to_le_bytes()).collect();
     assert_eq!(played.stdout, want);
 }
 
 #[test]
-fn lub_says_when_the_tape_has_no_end() {
+fn lub_says_when_the_track_has_no_end() {
     let xs = tone();
     let (cards, _) = heartburn::audio::encode(&xs);
     let text: String = cards[..cards.len() - 1].iter().map(|c| format!("{c}\n")).collect();
@@ -65,22 +65,22 @@ fn lub_says_which_line_isnt_a_card() {
 
 #[test]
 fn xtrack_refuses_half_a_sample() {
-    let tape = run(env!("CARGO_BIN_EXE_xtrack"), &[], &[1, 2, 3]);
-    assert_eq!(tape.status.code(), Some(1));
+    let track = run(env!("CARGO_BIN_EXE_xtrack"), &[], &[1, 2, 3]);
+    assert_eq!(track.status.code(), Some(1));
     assert_eq!(
-        String::from_utf8_lossy(&tape.stderr),
+        String::from_utf8_lossy(&track.stderr),
         "xtrack: standard input: an odd number of bytes: not 16-bit samples\n"
     );
 }
 
-/// A tape for each of `channels`, in files of their own: their paths, and the samples the decoder will make.
-fn tapes(test: &str, channels: &[&[i16]]) -> (Vec<String>, Vec<Vec<i16>>) {
+/// A track for each of `channels`, in files of their own: their paths, and the samples the decoder will make.
+fn tracks(test: &str, channels: &[&[i16]]) -> (Vec<String>, Vec<Vec<i16>>) {
     channels
         .iter()
         .enumerate()
         .map(|(i, xs)| {
             let (cards, expected) = heartburn::audio::encode(xs);
-            let path = std::env::temp_dir().join(format!("cardiaq-{test}-{}-{i}.tape", std::process::id()));
+            let path = std::env::temp_dir().join(format!("cardiaq-{test}-{}-{i}.track", std::process::id()));
             std::fs::write(&path, cards.iter().map(|c| format!("{c}\n")).collect::<String>()).unwrap();
             (path.to_string_lossy().into_owned(), expected)
         })
@@ -91,7 +91,7 @@ fn tapes(test: &str, channels: &[&[i16]]) -> (Vec<String>, Vec<Vec<i16>>) {
 fn dub_plays_left_then_right() {
     let left = tone();
     let right: Vec<i16> = left.iter().rev().map(|&s| s / 2).collect();
-    let (paths, expected) = tapes("stereo", &[&left, &right]);
+    let (paths, expected) = tracks("stereo", &[&left, &right]);
     let played = run(env!("CARGO_BIN_EXE_dub"), &[&paths[0], &paths[1]], b"");
     assert!(played.status.success(), "{}", String::from_utf8_lossy(&played.stderr));
     let want: Vec<u8> = expected[0]
@@ -104,25 +104,25 @@ fn dub_plays_left_then_right() {
 }
 
 #[test]
-fn dub_says_when_the_tapes_differ_in_length() {
+fn dub_says_when_the_tracks_differ_in_length() {
     let left = tone();
-    let (paths, expected) = tapes("lengths", &[&left, &left[..1000]]);
-    // each tape is whole blocks: 3008 samples and 1024
+    let (paths, expected) = tracks("lengths", &[&left, &left[..1000]]);
+    // each track is whole blocks: 3008 samples and 1024
     let more = expected[0].len() - expected[1].len();
     let played = run(env!("CARGO_BIN_EXE_dub"), &[&paths[0], &paths[1]], b"");
     assert_eq!(played.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&played.stderr),
         format!(
-            "dub: the tapes aren't the same length: {} has {more} samples more than {}\n",
+            "dub: the tracks aren't the same length: {} has {more} samples more than {}\n",
             paths[0], paths[1]
         )
     );
 }
 
 #[test]
-fn dub_reads_only_one_tape_from_standard_input() {
+fn dub_reads_only_one_track_from_standard_input() {
     let played = run(env!("CARGO_BIN_EXE_dub"), &["-", "-"], b"");
     assert_eq!(played.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&played.stderr).starts_with("dub: only one tape can be standard input\n"));
+    assert!(String::from_utf8_lossy(&played.stderr).starts_with("dub: only one track can be standard input\n"));
 }

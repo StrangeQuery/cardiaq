@@ -1,9 +1,9 @@
 //! Audio a CARDIAC decodes: a decimal ADPCM that fits CARDIAC's arithmetic. The encoder runs here, ahead of time;
 //! the decoder is a CARDIAC program, `audio/decode.cq`, and every sample it outputs is worked out on the CARDIAC.
 //!
-//! A channel is a tape of cards in blocks of 64 samples. A block starts with two cards, K (0-3) and M (1-9): its
+//! A channel is a track of cards in blocks of 64 samples. A block starts with two cards, K (0-3) and M (1-9): its
 //! step is M * 10^K. Then a card a sample, C (-500 to 499): the sample is the prediction, the line through the last
-//! two (twice the last, less the one before), plus C * step. A K below zero ends the tape. The decoder outputs each
+//! two (twice the last, less the one before), plus C * step. A K below zero ends the track. The decoder outputs each
 //! sample as two values, the thousands and then the units (0-999), since a value from -999 to 999 is too few
 //! levels for good sound: `sample` puts a pair back together.
 use crate::assemble;
@@ -70,7 +70,7 @@ fn code_block(xs: &[i16], mut s1: i64, mut s2: i64, step: i64) -> Option<(i64, C
     Some((err, out))
 }
 
-/// A channel's tape (its last card the end, -1), and the samples the decoder will output from it. Each block takes
+/// A channel's track (its last card the end, -1), and the samples the decoder will output from it. Each block takes
 /// the step with the least squared error, the first such in the order K 0-3, M 1-9, of those that keep it within
 /// 16 bits; the last block is filled out with its last sample.
 pub fn encode(samples: &[i16]) -> (Vec<i32>, Vec<i16>) {

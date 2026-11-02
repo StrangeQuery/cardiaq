@@ -1,5 +1,5 @@
 //! lub: play one channel of audio decoded by a CARDIAC (dub plays two: stereo). One CARDIAC runs the decoder,
-//! `audio/decode.cq`, reading a card of the tape each time an INP asks for one. Its output is two values a sample,
+//! `audio/decode.cq`, reading a card of the track each time an INP asks for one. Its output is two values a sample,
 //! the thousands and then the units; lub puts each pair back together and writes the sample to standard output as
 //! soon as the CARDIAC outputs it. No other arithmetic is done here.
 use std::fs::File;
@@ -16,20 +16,20 @@ const PROG: &str = "lub";
 
 fn usage() -> &'static str {
     "\
-Usage: lub [OPTION]... [TAPE]
+Usage: lub [OPTION]... [TRACK]
 Decode one channel of audio on a CARDIAC, and output its samples as they are decoded.
 
-TAPE is the channel as xtrack codes it, a card a line; with no TAPE, or TAPE -, it is read from standard input. The
-samples go to standard output, raw: signed 16-bit little-endian, at the rate the audio was coded at. To play
-them with ffplay (or write them to a file):
+TRACK is the channel as xtrack codes it, a card a line; with no TRACK, or TRACK -, it is read from standard
+input. The samples go to standard output, raw: signed 16-bit little-endian, at the rate the audio was coded at.
+To play them with ffplay (or write them to a file):
 
-  lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
+  lub song.left.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the tape was played to its end (or the player stopped reading), 1 if the tape can't be read
-or isn't a tape the decoder can decode, 2 for a mistake on the command line.
+Exit status is 0 if the track was played to its end (or the player stopped reading), 1 if the track can't be read
+or isn't a track the decoder can decode, 2 for a mistake on the command line.
 "
 }
 
@@ -109,7 +109,7 @@ fn main() {
     };
     let shown = if name == "-" { "standard input" } else { name };
 
-    // the tape, a line at a time, read as the CARDIAC asks for cards
+    // the track, a line at a time, read as the CARDIAC asks for cards
     let mut cards = reader.lines().enumerate().flat_map(|(n, line)| {
         let line = line.unwrap_or_else(|e| die(format!("{shown}: {}", getopt::os_error(&e))));
         tape::values(&line).unwrap_or_else(|e| die(format!("{shown}: line {}: {e}", n + 1)))

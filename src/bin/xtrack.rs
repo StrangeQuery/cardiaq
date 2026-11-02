@@ -1,4 +1,4 @@
-//! xtrack: code one channel of audio as a tape for the CARDIAC decoder, `audio/decode.cq`, which lub and dub run.
+//! xtrack: code one channel of audio as a track for the CARDIAC decoder, `audio/decode.cq`, which lub and dub run.
 //! The coding is `heartburn::audio::encode`; this reads the samples and writes the cards.
 use std::io::{IsTerminal, Read, Write};
 
@@ -12,20 +12,20 @@ const PROG: &str = "xtrack";
 fn usage() -> &'static str {
     "\
 Usage: xtrack [OPTION]... [FILE]
-Code one channel of audio as a tape for CARDIAC to decode (lub plays it).
+Code one channel of audio as a track for CARDIAC to decode (lub plays it).
 
 FILE is raw samples: one channel, signed 16-bit little-endian, at any rate (48000 a second, say); with no FILE,
-or FILE -, they are read from standard input. The tape goes to standard output, a card a line: for each block of
+or FILE -, they are read from standard input. The track goes to standard output, a card a line: for each block of
 64 samples, its step's K and M, then a card a sample; then -1, the end.
 
 To make the samples with ffmpeg (the left channel of song.wav, at 48 kHz):
 
-  ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | xtrack > song.left.tape
+  ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | xtrack > song.left.track
 
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the tape was written, 1 if the samples can't be read or the tape can't be written, 2 for a
+Exit status is 0 if the track was written, 1 if the samples can't be read or the track can't be written, 2 for a
 mistake on the command line.
 "
 }

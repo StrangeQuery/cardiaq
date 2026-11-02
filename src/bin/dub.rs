@@ -1,6 +1,6 @@
 //! dub: play two channels of audio, left and right, each decoded by a CARDIAC of its own (lub plays one). Both
 //! CARDIACs run the decoder, `audio/decode.cq`, on one thread, taking turns a block at a time: each turn, the left
-//! one is given its tape's next block of cards and runs until it asks for more, then the right one. Each outputs
+//! one is given its track's next block of cards and runs until it asks for more, then the right one. Each outputs
 //! two values a sample, the thousands and then the units; dub puts each pair back together and writes the samples
 //! to standard output, left then right, as a stereo stream. No other arithmetic is done here.
 use std::collections::VecDeque;
@@ -21,17 +21,17 @@ fn usage() -> &'static str {
 Usage: dub [OPTION]... LEFT RIGHT
 Decode two channels of audio, each on a CARDIAC, and output them as one stereo stream as they are decoded.
 
-LEFT and RIGHT are the channels' tapes as xtrack codes them, a card a line; one of them may be -, standard input.
+LEFT and RIGHT are the channels' tracks as xtrack codes them, a card a line; one of them may be -, standard input.
 The samples go to standard output, raw: signed 16-bit little-endian, left then right, at the rate the audio was
 coded at. To play them with ffplay (or write them to a file):
 
-  dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
+  dub song.left.track song.right.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the tapes were played to their end (or the player stopped reading), 1 if a tape can't be
-read, isn't a tape the decoder can decode, or the two aren't the same length, 2 for a mistake on the command
+Exit status is 0 if the tracks were played to their end (or the player stopped reading), 1 if a track can't be
+read, isn't a track the decoder can decode, or the two aren't the same length, 2 for a mistake on the command
 line.
 "
 }
@@ -63,7 +63,7 @@ impl Console for Samples {
     }
 }
 
-/// A channel: its CARDIAC, the cards of its tape still to go in, and the samples decoded.
+/// A channel: its CARDIAC, the cards of its track still to go in, and the samples decoded.
 struct Channel {
     cardiac: Machine,
     cards: Box<dyn Iterator<Item = i32>>,
@@ -102,7 +102,7 @@ impl Channel {
         }
     }
 
-    /// The channel's turn: its tape's next block of cards into the reader, and the CARDIAC run until it asks for
+    /// The channel's turn: its track's next block of cards into the reader, and the CARDIAC run until it asks for
     /// more or halts at the end card.
     fn turn(&mut self) {
         if self.done {
@@ -143,9 +143,9 @@ fn main() {
         None => {}
     }
     let (left, right) = match &operands[..] {
-        [l, r] if l == "-" && r == "-" => getopt::usage_error(PROG, "only one tape can be standard input"),
+        [l, r] if l == "-" && r == "-" => getopt::usage_error(PROG, "only one track can be standard input"),
         [l, r] => (l.as_str(), r.as_str()),
-        [] | [_] => getopt::usage_error(PROG, "two tapes: LEFT and RIGHT"),
+        [] | [_] => getopt::usage_error(PROG, "two tracks: LEFT and RIGHT"),
         [_, _, extra, ..] => getopt::usage_error(PROG, format!("extra operand '{extra}'")),
     };
     if io::stdout().is_terminal() {
@@ -179,7 +179,7 @@ fn main() {
     let (l, r) = (left.samples.decoded.len(), right.samples.decoded.len());
     if l != r {
         die(format!(
-            "the tapes aren't the same length: {} has {} samples more than {}",
+            "the tracks aren't the same length: {} has {} samples more than {}",
             if l > r { &left.samples.name } else { &right.samples.name },
             l.max(r),
             if l > r { &right.samples.name } else { &left.samples.name },

@@ -25,14 +25,14 @@ the reference the Rust one was checked against.
 - SFT, which shifts the accumulator's magnitude left, then right, by whole decimal digits, keeping the sign.
 - STO keeps the last three digits of the accumulator, with its sign: 2,040 stores as 40, and -2,040 as -40.
 
-### The shape of it: tapes in, tapes out
+### The shape of it: tracks in, samples out
 
 Everything here follows one path:
 
 1. **Audio goes in.** The host reads the audio file.
-2. **The host writes the input tapes**: the encoder turns each channel into a stream of cards, ahead of time.
-3. **The CARDIACs write the output tapes**: each decodes its input tape, one card at a time, and outputs values.
-4. **The host combines the output tapes** into an audio stream and writes it out to a player or a file.
+2. **The host writes the tracks**: the encoder turns each channel into a track, a stream of cards, ahead of time.
+3. **The CARDIACs output values**: each decodes its track, one card at a time, and outputs two values a sample.
+4. **The host combines the values** into an audio stream and writes it out to a player or a file.
 
 It pretty much has to be this way, because a CARDIAC value isn't enough levels for good sound. A value from
 -999 to 999 is 1,999 levels, about 11 bits. CD audio has 65,536 (16 bits). One value a sample would leave quiet
@@ -43,11 +43,11 @@ decoding. Every prediction, every correction and every carry happens on the CARD
 
 ```mermaid
 flowchart TD
-  A["audio in"] --> H1["host: the encoder writes the input tapes"]
-  H1 --> T1["input tapes: a card a code, a header a block"]
+  A["audio in"] --> H1["host: the encoder writes the tracks"]
+  H1 --> T1["tracks: a card a code, a header a block"]
   T1 --> C["CARDIACs: decode.cq, one per channel"]
-  C --> T2["output tapes: two values a sample, the thousands and the units"]
-  T2 --> H2["host: combines the output tapes into 16-bit samples, the channels interleaved"]
+  C --> T2["output: two values a sample, the thousands and the units"]
+  T2 --> H2["host: combines the values into 16-bit samples, the channels interleaved"]
   H2 --> O["audio out: a player, or a file"]
 ```
 
@@ -412,7 +412,7 @@ main()
 ```
 
 It is slow: about 30 seconds for 16 seconds of one channel, all of it in the search over steps. `xtrack` is the
-same encoder in Rust (`heartburn::audio::encode`). It writes the same tape, card for card, in a quarter of a
+same encoder in Rust (`heartburn::audio::encode`). It writes the same track, card for card, in a quarter of a
 second, and rounds halves to the even number as Python's `round` does, so the two agree. It adds one guard: when
 the prediction overshoots far enough that a small step can't bring the sample back within 16 bits, that step is
 not a choice for the block. (The Python would write a sample the decoder can't hold.) The largest step, 9,000,
@@ -458,7 +458,7 @@ outputs it, so a pipe plays the channel while the CARDIAC decodes it. A few line
 ```mermaid
 flowchart TD
   A["song.s16<br/>48 kHz, 16-bit"] --> E["encode.py<br/>once, ahead of time"]
-  E --> F["the input tape: left.cards<br/>K, M, then 64 codes, a block at a time"]
+  E --> F["the track: left.cards<br/>K, M, then 64 codes, a block at a time"]
   subgraph host1 ["host: burn"]
     R["the card reader"]
   end
@@ -466,7 +466,7 @@ flowchart TD
     D["prediction + C x step,<br/>in thousands and units"]
   end
   subgraph host2 ["host: burn, then python"]
-    P["the output tape: burn prints each value<br/>on a line of its own, as text"] --> J["python combines: thousands x 1000 + units,<br/>as a binary 16-bit sample"]
+    P["the output: burn prints each value<br/>on a line of its own, as text"] --> J["python combines: thousands x 1000 + units,<br/>as a binary 16-bit sample"]
   end
   F --> R
   R -- "INP: a card, when asked" --> D
@@ -474,7 +474,7 @@ flowchart TD
   J --> FF["ffplay: raw signed 16-bit, 48 kHz, mono"] --> SP(("speakers"))
 ```
 
-The Python is the host's combining step, the last on the path. It reads the output tape two lines at a time, a
+The Python is the host's combining step, the last on the path. It reads `burn`'s output two lines at a time, a
 sample's thousands and its units, and writes the sample as two binary bytes, little-endian: 1,992 goes to `ffplay`
 as `C8 07`. Raw samples carry no header, so `ffplay`'s flags say what they are: `-f s16le` (signed 16-bit,
 little-endian), `-ar 48000` (the rate) and `-ch_layout mono` (one channel).
@@ -496,15 +496,15 @@ is worked out by the CARDIAC. We played the 16-second test clip this way, and it
 ### lub: the mono player as a program
 
 `lub` is that pipe's `burn` and Python in one program, about 130 lines with its help and error messages. It runs
-one CARDIAC on the decoder, reads a card of the tape each time an INP asks for one, joins each pair of output
-values into a sample, and writes the sample to standard output as soon as it is made. `xtrack` makes the tape:
+one CARDIAC on the decoder, reads a card of the track each time an INP asks for one, joins each pair of output
+values into a sample, and writes the sample to standard output as soon as it is made. `xtrack` makes the track:
 
 ```sh
-ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | $B/xtrack > song.left.tape
-$B/lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
+ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | $B/xtrack > song.left.track
+$B/lub song.left.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 ```
 
-Its samples are the same bytes as the `burn` and Python pipe's. It stops with a message, not a noise, when a tape
+Its samples are the same bytes as the `burn` and Python pipe's. It stops with a message, not a noise, when a track
 has no end card, a line isn't a card, or the decoder's two values aren't a 16-bit sample; and quietly when the
 player stops reading. The tests (`tests/audio.rs`, and `src/audio.rs`'s own) check that the CARDIAC's samples are
 exactly the encoder's model, in the library and through the programs.
@@ -559,23 +559,23 @@ made, which a shell pipe doesn't do well.
 
 Decoding costs about 4 M instructions a second for both channels, so a thread per channel would buy nothing and add
 coordination. `dub` keeps one thread and two CARDIACs, and they take turns a block at a time. Each turn, a
-channel's CARDIAC is given its tape's next 66 cards (a header and 64 codes) and runs until it asks for more, which is
+channel's CARDIAC is given its track's next 66 cards (a header and 64 codes) and runs until it asks for more, which is
 exactly one block: 64 samples. Then the other channel's turn. Each machine stays a plain mono decoder with its own
-100 cells and its own tape.
+100 cells and its own track.
 
 ```sh
-ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/xtrack > song.right.tape
-$B/dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
+ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/xtrack > song.right.track
+$B/dub song.left.track song.right.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 ```
 
-It is the same path as the mono player, with two of everything in the middle: two input tapes, two CARDIACs, two
-output tapes. The host's combining step joins each channel's thousands and units as before, then interleaves the
+It is the same path as the mono player, with two of everything in the middle: two tracks, two CARDIACs, two
+streams of values. The host's combining step joins each channel's thousands and units as before, then interleaves the
 channels, left then right, which is what a stereo stream is (and what `-ch_layout stereo` tells `ffplay` to expect).
 
 ```mermaid
 flowchart TD
-  A["song.wav"] --> PL["ffmpeg, then xtrack: the left channel's tape"]
-  A --> PR["ffmpeg, then xtrack: the right channel's tape"]
+  A["song.wav"] --> PL["ffmpeg, then xtrack: the left channel's track"]
+  A --> PR["ffmpeg, then xtrack: the right channel's track"]
   subgraph dub ["dub: one thread, taking turns a block at a time"]
     CL["CARDIAC: decode.cq"]
     CR["CARDIAC: decode.cq"]
@@ -588,7 +588,7 @@ flowchart TD
   J --> FF["ffplay: raw signed 16-bit, 48 kHz, stereo"] --> SP(("speakers"))
 ```
 
-Its output is, byte for byte, the stereo clip made the batch way above, in 0.26 s for the 16 seconds. Tapes of
+Its output is, byte for byte, the stereo clip made the batch way above, in 0.26 s for the 16 seconds. Tracks of
 different lengths are an error, said with which is longer and by how much, rather than one channel played on alone.
 
 We considered and set aside:
@@ -600,6 +600,6 @@ We considered and set aside:
 
 ### Still to do
 
-- A binary card format for long tapes (2 bytes a card), so the whole soundtrack isn't 130 MB of text.
+- A binary card format for long tracks (2 bytes a card), so the whole soundtrack isn't 130 MB of text.
 - Playing in step with a picture: the samples handed to the sound card on a clock, rather than as fast as the
   pipe takes them.
