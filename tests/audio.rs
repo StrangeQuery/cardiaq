@@ -126,3 +126,13 @@ fn dub_reads_only_one_track_from_standard_input() {
     assert_eq!(played.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&played.stderr).starts_with("dub: only one track can be standard input\n"));
 }
+
+/// The example track decodes to its 128 samples, the first of them 6,640, as audio/README.md says.
+#[test]
+fn the_example_track_plays() {
+    let track = std::fs::read("audio/blue-danube.track").unwrap();
+    let played = run(env!("CARGO_BIN_EXE_lub"), &[], &track);
+    assert!(played.status.success(), "{}", String::from_utf8_lossy(&played.stderr));
+    assert_eq!(played.stdout.len(), 128 * 2);
+    assert_eq!(i16::from_le_bytes([played.stdout[0], played.stdout[1]]), 6640);
+}
