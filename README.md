@@ -133,7 +133,7 @@ program that is cell 10.
 
 `burn` reads input from standard input and prints what the program outputs on standard output. How the program
 stopped goes to standard error, so the output pipes cleanly. The count includes the 30 instructions the loader ran to
-read the deck in; `ekg`, below, counts only the program's.
+read the deck in. `ekg`, below, loads a listing through the same loader, so it runs exactly as `burn` runs its deck.
 
 **Make a mistake.** Misspell the label in cell 13 and get cell 11's contents wrong:
 
@@ -157,18 +157,18 @@ or given with `-x`:
     15   810           JMP  start
     breakpoint, cell 10
     10   530  start    OUT  n        ; print n, take one off, and stop once it goes below zero
-    pc 10  acc +0004  steps 6  reader []
+    pc 10  acc +0004  steps 36  reader []
     out: 4
     out: 3
     out: 2
     out: 1
     out: 0
-    halted: HRS in cell 16, after 35 instructions
+    halted: HRS in cell 16, after 65 instructions
 
 **Profile it.**
 
     $ ekg --profile countdown.cq 2>/dev/null
-    countdown.cq: halted after 35 instructions, in 0.000 s (1.3 million a second)
+    countdown.cq: halted after 35 instructions (and 30 loading the deck), in 0.000 s (1.3 million a second)
 
     Hottest cells:
                6  17.14%  10   530  start    OUT  n        ; print n, take one off, and stop once it goes below zero
@@ -265,11 +265,12 @@ would, puts that deck in the reader and starts the loader at 00: any deck, in an
 
 | | |
 |---|---|
+| `--limit=N` | stop a program after N instructions (default a billion) |
 | `-h`, `--help` | display help and exit |
 | `--version` | output version information and exit |
 
 Options go before the deck: everything after it is input, minus signs and all. Exit status is 0 if the program halted
-or ran out of cards, 1 if the deck can't be read or the program never stops (a run stops at a billion instructions),
+or ran out of cards, 1 if the deck can't be read or the program never stops (a run stops at a billion instructions, or `--limit`),
 2 for a mistake on the command line.
 
 ## ekg
@@ -289,7 +290,7 @@ program's input after it:
 | `run`, `r` | start the program again from the beginning, with its input, and continue |
 | `continue`, `c` | run until a breakpoint, a watch, a halt, or an INP with no card |
 | `step`, `s` [N] | run one instruction (or N) |
-| `next`, `n` [N] | step, but run a routine a JMP calls through, on to the cell after the JMP |
+| `next`, `n` [N] | step, but run a routine a JMP calls through, on to the cell after the JMP (a JMP calls when the code it jumps to reads 99, the way back, before another JMP) |
 | `break`, `b` PLACE | stop before the instruction in PLACE runs |
 | `watch` PLACE | stop after an instruction writes PLACE |
 | `delete`, `d` [PLACE] | remove the breakpoint and watch on PLACE (all of them without one) |
@@ -298,7 +299,7 @@ program's input after it:
 | `print`, `p` PLACE | a cell's word, and the word as an instruction (also `p acc`, `p pc`) |
 | `x` PLACE [N] | the words in N cells from PLACE (10 unless given) |
 | `list`, `l` [PLACE] | the listing around the PC (or PLACE), the PC marked `>`, breakpoints `b` |
-| `set` PLACE VALUE | write a cell (also `set acc VALUE`, `set pc CELL`) |
+| `set` PLACE VALUE | write a cell (also `set acc VALUE`, `set pc PLACE`) |
 | `input` CARDS... | put cards in the reader, after those in it |
 | `help`, `h` | the commands |
 | `quit`, `q` | leave |

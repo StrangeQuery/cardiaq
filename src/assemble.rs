@@ -352,7 +352,7 @@ pub fn assemble(text: &str) -> Assembly {
         let addr_t = at(line, c.address.clone());
         let a = value(addr_t);
         let mut duplicate = false;
-        if !digits(addr_t) || a > 99 {
+        if !digits(addr_t) || a > 99 || addr_t.len() > 2 {
             raise("the address is not a cell 00-99".into(), Some(&c.address));
         } else if let Some(first) = seen_addr[a as usize] {
             let msg = ["cell ", &num(a, 2), " is on line ", &num(first as i64 + 1, 1), " too"].concat();
@@ -370,7 +370,14 @@ pub fn assemble(text: &str) -> Assembly {
             }
         }
         let op = tok(&c.opcode).map(|o| OPS.into_iter().find(|&p| p == o).unwrap_or("DATA"));
-        let operand = match (tok(&c.operand), op) {
+        // HRS needs no operand: a word after it that is no number and names no label starts the comment (`HRS
+        // halt here`)
+        let (mut operand_t, mut comment_at) = (tok(&c.operand), c.comment);
+        if op == Some("HRS") && operand_t.is_some_and(|t| !is_num(t) && resolve(t, &labels).is_none()) {
+            operand_t = None;
+            comment_at = c.operand.as_ref().map(|r| r.start);
+        }
+        let operand = match (operand_t, op) {
             (Some(t), _) => Some(t),
             (None, Some(o)) if o != "DATA" => Some("00"),
             _ => None,
@@ -451,17 +458,61 @@ pub fn assemble(text: &str) -> Assembly {
             label: label.map(String::from),
             op,
             operand: op.and(operand).map(String::from),
-            comment: c
-                .comment
-                .map_or(String::new(), |s| trim(at(line, s..line.len())).to_string()),
+            comment: comment_at.map_or(String::new(), |s| trim(at(line, s..line.len())).to_string()),
         });
     }
     asm.start = start(&lines, &info, &asm.rows);
     asm
 }
 
-/// A line that starts with a cell's address and names an opcode, but isn't a cell (a cell's line is never one).
+/// The opcodes as written, `DATA` before `DAT` (so `DATA5` is DATA and 5).
+const WRITTEN_OPS: [&str; 12] = [
+    "INP", "CLA", "ADD", "TAC", "SFT", "OUT", "STO", "SUB", "JMP", "HRS", "DATA", "DAT",
+];
+
+/// A line that starts with a cell's address but isn't a cell: an opcode mistyped where one goes (`out`, `OTU`,
+/// `OUT20`), or a line that names an opcode elsewhere. A cell's line is never one; a manual's table row
+/// (`14  N(start)  N = ...`) is neither, and stays prose.
 fn stray(ln: usize, line: &str) -> Option<Diagnostic> {
+    let w = words(line);
+    if let Some((_, a)) = w.first().filter(|(_, a)| (1..=2).contains(&a.len()) && digits(a)) {
+        let flag = |span: &Range<usize>, why: &[&str]| {
+            let mut msg = ["cell ", &num(value(a), 2), ": "].concat();
+            why.iter().for_each(|p| msg.push_str(p));
+            msg.push_str(": not loaded");
+            Some(error(ln, span.clone(), msg))
+        };
+        // where the opcode goes: after the address, or after a label
+        for k in 1..w.len().min(3) {
+            let (span, t) = &w[k];
+            let operand_next = w.get(k + 1).is_none_or(|(_, n)| is_operand(n));
+            if let Some(op) = WRITTEN_OPS.iter().find(|o| o.eq_ignore_ascii_case(t)) {
+                if operand_next {
+                    return flag(span, &[t, " is not an opcode: opcodes are capitals, ", op]);
+                }
+            }
+            if let Some(op) = WRITTEN_OPS.iter().find(|o| t.len() > o.len() && t.starts_with(*o)) {
+                if is_operand(&t[op.len()..]) {
+                    return flag(
+                        span,
+                        &[
+                            t,
+                            " is not an opcode: a space goes between ",
+                            op,
+                            " and ",
+                            &t[op.len()..],
+                        ],
+                    );
+                }
+            }
+            if t.len() == 3 && t.bytes().all(|b| b.is_ascii_uppercase()) && w.len() > k + 1 && operand_next {
+                return flag(span, &[t, " is not an opcode"]);
+            }
+            if !is_label(t) {
+                break;
+            }
+        }
+    }
     if !line.split(|c: char| !word_char(c)).any(is_op) {
         return None;
     }
@@ -480,6 +531,32 @@ fn stray(ln: usize, line: &str) -> Option<Diagnostic> {
     ]
     .concat();
     Some(error(ln, lead..line.len(), msg))
+}
+
+/// What the deck's loader does to a listing's cells, as warnings, for a host that runs the listing as its deck
+/// (`deck`, as carc writes it): cells 01 and 02 are the loader's and are not on the deck, and the loader's jumps
+/// write 99, so what the listing puts there doesn't stay. (A host that writes the cells straight into memory has
+/// no loader, and none of these.)
+pub fn loader_warnings(text: &str, asm: &Assembly) -> Vec<Diagnostic> {
+    let lines = lines(text);
+    asm.rows
+        .iter()
+        .filter_map(|r| {
+            let why = match r.addr {
+                1 | 2 => "is the loader's: it is not on the deck",
+                99 => "is written by the loader's jumps: what the deck puts there doesn't stay",
+                _ => return None,
+            };
+            let span = match tokenize(lines.get(r.line).copied().unwrap_or_default()) {
+                Line::Cell(c) => c.address,
+                _ => 0..0,
+            };
+            Some(Diagnostic {
+                warning: true,
+                ..error(r.line, span, ["cell ", &num(r.addr as i64, 2), " ", why].concat())
+            })
+        })
+        .collect()
 }
 
 fn error(line: usize, span: Range<usize>, message: String) -> Diagnostic {
@@ -784,7 +861,58 @@ mod tests {
             [
                 "1 [7,12] unknown label \"abc\"",
                 "3 [7,12] unknown label loop:",
-                "5 [7,10] label lab is defined twice"
+                "5 [7,10] label lab is defined twice",
+                "6 [3,6] cell 16: cla is not an opcode: opcodes are capitals, CLA: not loaded"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mistyped_opcode_is_flagged_never_dropped() {
+        let a = assemble(
+            "10 out 20\n11 OTU 20\n12 OUT20\n13 x: Cla 20\n14 DATA5\n15 HRS halt here\n16 900 HRS done\n\
+             17 HRS end\n18 end DATA 0\n14  N(start)  N = number of pebbles\n3 cards are read\n",
+        );
+        assert_eq!(
+            diagnostics(&a),
+            [
+                "0 [3,6] cell 10: out is not an opcode: opcodes are capitals, OUT: not loaded",
+                "1 [3,6] cell 11: OTU is not an opcode: not loaded",
+                "2 [3,8] cell 12: OUT20 is not an opcode: a space goes between OUT and 20: not loaded",
+                "3 [6,9] cell 13: Cla is not an opcode: opcodes are capitals, CLA: not loaded",
+                "4 [3,8] cell 14: DATA5 is not an opcode: a space goes between DATA and 5: not loaded"
+            ]
+        );
+        // HRS with a comment after it, and HRS on a label
+        assert_eq!(
+            rows(&a),
+            [
+                "5:15=900 HRS 00 ;halt here",
+                "6:16=900 HRS 00 ;done",
+                "7:17=918 HRS end",
+                "8:18=0 end DATA 0"
+            ]
+        );
+        // a three-digit address isn't a cell's
+        assert_eq!(
+            diagnostics(&assemble("010 120 CLA 20\n")),
+            ["0 [0,3] the address is not a cell 00-99"]
+        );
+    }
+
+    #[test]
+    fn the_loader_takes_cells_01_02_and_99() {
+        let text = "02 042\n10 OUT 99\n11 HRS\n99 007\n";
+        let a = assemble(text);
+        let w: Vec<String> = loader_warnings(text, &a)
+            .iter()
+            .map(|d| format!("{} {:?} {}", d.line, d.span, d.message))
+            .collect();
+        assert_eq!(
+            w,
+            [
+                "0 0..2 cell 02 is the loader's: it is not on the deck",
+                "3 0..2 cell 99 is written by the loader's jumps: what the deck puts there doesn't stay"
             ]
         );
     }

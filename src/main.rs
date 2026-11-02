@@ -1,16 +1,17 @@
 //! burn: run a CARDIAC deck, and see how fast this machine runs CARDIAC. It only runs things: decks are made from
 //! listings by carc (or Cardigan's Export). A file is a deck if it looks like one: it starts with the loader.
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
 use heartburn::cardiac::{self, Console, Stop};
 use heartburn::listing;
-use heartburn::tape::{values, Tape};
+use heartburn::tape::values;
 
+mod cli;
 mod getopt;
 
-/// Instructions a run may take before it is called a program that never stops.
+/// Instructions a run may take before it is called a program that never stops (unless --limit says).
 const LIMIT: u64 = 1_000_000_000;
 
 const PROG: &str = "burn";
@@ -32,6 +33,7 @@ goes in the reader and it starts again at 00.
 burn bench: how fast this machine runs CARDIAC, three nested countdown loops, 626.5 million instructions. (A deck
 called bench runs as ./bench.)
 
+      --limit=N  stop a program after N instructions (default 1000000000)
   -h, --help     display this help and exit
       --version  output version information and exit
 
@@ -44,39 +46,22 @@ fn die(why: impl std::fmt::Display) -> ! {
     getopt::die(PROG, why)
 }
 
-/// The teletype: each card on standard output as it is punched.
+/// The teletype: each card on standard output as it is punched. When no one reads it any more (`burn deck | head`)
+/// the program is stopped, as a C program is by SIGPIPE, rather than left running to the limit.
 struct Teletype(std::io::StdoutLock<'static>);
 
 impl Console for Teletype {
     fn punch(&mut self, card: i32) {
-        let _ = writeln!(self.0, "{card}");
-        let _ = self.0.flush();
+        if let Err(e) = writeln!(self.0, "{card}").and_then(|_| self.0.flush()) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0)
+            }
+            die(format!("standard output: {}", getopt::os_error(&e)))
+        }
     }
 }
 
-/// Standard input as the card reader: each number a card, read when the program asks for one.
-fn stdin_cards() -> impl Iterator<Item = i32> {
-    let mut lines = std::io::stdin().lock().lines();
-    let mut pending: std::vec::IntoIter<i32> = vec![].into_iter();
-    std::iter::from_fn(move || loop {
-        if let Some(c) = pending.next() {
-            return Some(c);
-        }
-        let line = lines
-            .next()?
-            .unwrap_or_else(|e| die(format!("standard input: {}", getopt::os_error(&e))));
-        pending = values(&line)
-            .unwrap_or_else(|e| die(format!("standard input: {e}")))
-            .into_iter();
-    })
-}
-
-/// Whether cards look like a deck: they start with the loader's two cards, 002 and 800, as every deck does.
-fn looks_like_a_deck(deck: &Tape) -> bool {
-    deck.phases.first().is_some_and(|cards| cards.starts_with(&[2, 800]))
-}
-
-fn run(file: &str, input: Option<Vec<i32>>) {
+fn run(file: &str, input: Option<Vec<i32>>, limit: u64) {
     let name = if file == "-" { "standard input" } else { file };
     // what a file is, from what's in it, not its name: a deck starts with the loader
     let not_a_deck = |name: &str| -> ! {
@@ -91,13 +76,13 @@ fn run(file: &str, input: Option<Vec<i32>>) {
         std::io::stdin()
             .read_to_string(&mut text)
             .unwrap_or_else(|e| die(format!("standard input: {}", getopt::os_error(&e))));
-        let deck = Tape::parse(&text).ok().filter(looks_like_a_deck);
+        let deck = cli::deck_or_not(name, &text, None).unwrap_or_else(|e| die(e));
         let deck = deck.unwrap_or_else(|| not_a_deck(name));
         (deck, Path::new("."), Some(input.unwrap_or_default()))
     } else {
-        // read once for what the OS says is wrong (no such file, a directory, no permission)
-        std::fs::read(file).unwrap_or_else(|e| die(format!("{file}: {}", getopt::os_error(&e))));
-        let deck = Tape::load(Path::new(file)).ok().filter(looks_like_a_deck);
+        // read for what the OS says is wrong (no such file, a directory, no permission), and what it is
+        let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {}", getopt::os_error(&e))));
+        let deck = cli::deck_or_not(file, &text, Some(Path::new(file))).unwrap_or_else(|e| die(e));
         let dir = Path::new(file)
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -108,14 +93,16 @@ fn run(file: &str, input: Option<Vec<i32>>) {
         .unwrap_or_else(|e| die(format!("{name}: {e}")));
     let mut teletype = Teletype(std::io::stdout().lock());
     let (why, steps) = match input {
-        Some(cards) => deck.run_into(&cards, &mut std::iter::empty(), LIMIT, &mut teletype),
-        None => deck.run_into(&[], &mut stdin_cards(), LIMIT, &mut teletype),
+        Some(cards) => deck.run_into(&cards, &mut std::iter::empty(), limit, &mut teletype),
+        None => deck.run_into(&[], &mut cli::stdin_cards(PROG), limit, &mut teletype),
     }
     .unwrap_or_else(|e| die(format!("{name}: {e}")));
     match why {
         Stop::Halt => eprintln!("     halted after {steps} instructions"),
         Stop::OutOfCards => eprintln!("     out of cards after {steps} instructions"),
-        Stop::Limit => die(format!("still running after {LIMIT} instructions")),
+        Stop::Limit => die(format!(
+            "still running after {limit} instructions (--limit N to run longer)"
+        )),
     }
 }
 
@@ -162,15 +149,26 @@ fn main() {
             long: "version",
             arg: false,
         },
+        getopt::Opt {
+            short: None,
+            long: "limit",
+            arg: true,
+        },
     ];
     // options come before the deck: what follows it is the program's input, -5 a card, not an option
     let (given, operands) = getopt::parse(PROG, &opts, std::env::args().skip(1), true);
-    if let Some((o, _)) = given.first() {
+    let mut limit = LIMIT;
+    for (o, value) in &given {
         match *o {
-            "help" => print!("{}", usage()),
-            _ => getopt::version(PROG),
+            "help" => return print!("{}", usage()),
+            "version" => return getopt::version(PROG),
+            _ => {
+                let v = value.as_deref().unwrap_or_default();
+                limit = v.parse().ok().filter(|&n| n > 0).unwrap_or_else(|| {
+                    getopt::usage_error(PROG, format!("invalid --limit '{v}': a number of instructions"))
+                });
+            }
         }
-        return;
     }
     match operands.split_first() {
         None => getopt::usage_error(PROG, "missing deck operand"),
@@ -186,7 +184,7 @@ fn main() {
             let input = (dashes || !rest.is_empty()).then(|| {
                 values(&rest.join(" ")).unwrap_or_else(|e| getopt::usage_error(PROG, format!("invalid input: {e}")))
             });
-            run(deck, input)
+            run(deck, input, limit)
         }
     }
 }

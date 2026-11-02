@@ -4,8 +4,10 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
-use heartburn::assemble::{self, Assembly};
+use heartburn::assemble;
 
+#[path = "../cli.rs"]
+mod cli;
 #[path = "../getopt.rs"]
 mod getopt;
 
@@ -42,15 +44,12 @@ fn die(why: impl std::fmt::Display) -> ! {
     getopt::die(PROG, why)
 }
 
-/// What is wrong, compiler style, a line each; whether any of it is an error.
-fn report(file: &str, text: &str, asm: &Assembly) -> bool {
-    let lines = assemble::lines(text);
-    for d in &asm.diagnostics {
-        let col = lines[d.line][..d.span.start].chars().count() + 1;
-        let kind = if d.warning { "warning" } else { "error" };
-        eprintln!("{file}:{}:{col}: {kind}: {}", d.line + 1, d.message);
+/// Whether two paths are the same file (one that doesn't exist yet is no file at all).
+fn same_file(a: &str, b: &str) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
     }
-    asm.diagnostics.iter().any(|d| !d.warning)
 }
 
 fn carc(file: &str, out: Option<&str>, start: Option<usize>) {
@@ -66,16 +65,8 @@ fn carc(file: &str, out: Option<&str>, start: Option<usize>) {
         (text, file)
     };
     let asm = assemble::assemble(&text);
-    let errors = report(listing, &text, &asm);
-    // the loader's own cells: 01 and 02 are the loader, and its jumps write 99
-    for r in &asm.rows {
-        let why = match r.addr {
-            1 | 2 => "the loader's: it is not on the deck",
-            99 => "written by the loader's jumps: what the deck puts there doesn't stay",
-            _ => continue,
-        };
-        eprintln!("{listing}:{}:1: warning: cell {:02} is {why}", r.line + 1, r.addr);
-    }
+    // with what the loader does to cells 01, 02 and 99: the deck is what runs
+    let errors = cli::report("", listing, &text, &asm, true);
     if errors {
         die(format!("{listing}: not assembled: no deck written"))
     }
@@ -87,6 +78,15 @@ fn carc(file: &str, out: Option<&str>, start: Option<usize>) {
         None if file == "-" => "-".to_string(),
         None => Path::new(file).with_extension("cqb").to_string_lossy().into_owned(),
     };
+    // never the listing written over with its deck (a listing called NAME.cqb, or -o naming it)
+    if file != "-" && deck != "-" && same_file(file, &deck) {
+        die(format!(
+            "{deck}: that is the listing itself: write the deck to another file with -o"
+        ))
+    }
+    if let Some(w) = cli::start_warning(start, &asm) {
+        eprintln!("{listing}: warning: {w}");
+    }
     let name = |p: &str| {
         Path::new(p)
             .file_name()

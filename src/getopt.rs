@@ -41,15 +41,23 @@ pub fn version(prog: &str) {
     );
 }
 
-/// The options given (each by its long name, with its argument) and the operands, in order. Options may come
-/// anywhere among the operands, as gcc takes them; or, with `first_operand_ends`, only before the first, the rest
-/// belonging to it (as `env` and `gdb --args` take them).
-pub fn parse(
-    prog: &str,
+/// The options given (each by its long name, with its argument) and the operands, in order.
+pub type Parsed = (Vec<(&'static str, Option<String>)>, Vec<String>);
+
+/// The options given and the operands, as `try_parse` reads them; a mistake reported as getopt reports it, and
+/// exit 2.
+pub fn parse(prog: &str, opts: &[Opt], args: impl IntoIterator<Item = String>, first_operand_ends: bool) -> Parsed {
+    try_parse(opts, args, first_operand_ends).unwrap_or_else(|why| usage_error(prog, why))
+}
+
+/// The options given (each by its long name, with its argument) and the operands, in order; or the mistake, as
+/// getopt words it. Options may come anywhere among the operands, as gcc takes them; or, with
+/// `first_operand_ends`, only before the first, the rest belonging to it (as `env` and `gdb --args` take them).
+pub fn try_parse(
     opts: &[Opt],
     args: impl IntoIterator<Item = String>,
     first_operand_ends: bool,
-) -> (Vec<(&'static str, Option<String>)>, Vec<String>) {
+) -> Result<Parsed, String> {
     let (mut given, mut operands) = (vec![], vec![]);
     let mut args = args.into_iter();
     while let Some(a) = args.next() {
@@ -68,21 +76,21 @@ pub fn parse(
                     .collect::<Vec<_>>()[..]
                 {
                     [o] => o,
-                    [] => usage_error(prog, format!("unrecognized option '{a}'")),
+                    [] => return Err(format!("unrecognized option '{a}'")),
                     ref several => {
                         let names: Vec<String> = several.iter().map(|o| format!("'--{}'", o.long)).collect();
-                        usage_error(
-                            prog,
-                            format!("option '--{name}' is ambiguous; possibilities: {}", names.join(" ")),
-                        )
+                        return Err(format!(
+                            "option '--{name}' is ambiguous; possibilities: {}",
+                            names.join(" ")
+                        ));
                     }
                 },
             };
             let value = match (o.arg, value) {
-                (false, Some(_)) => usage_error(prog, format!("option '--{}' doesn't allow an argument", o.long)),
+                (false, Some(_)) => return Err(format!("option '--{}' doesn't allow an argument", o.long)),
                 (true, None) => Some(
                     args.next()
-                        .unwrap_or_else(|| usage_error(prog, format!("option '--{}' requires an argument", o.long))),
+                        .ok_or_else(|| format!("option '--{}' requires an argument", o.long))?,
                 ),
                 (_, v) => v,
             };
@@ -92,7 +100,7 @@ pub fn parse(
                 let o = opts
                     .iter()
                     .find(|o| o.short == Some(c))
-                    .unwrap_or_else(|| usage_error(prog, format!("invalid option -- '{c}'")));
+                    .ok_or_else(|| format!("invalid option -- '{c}'"))?;
                 if !o.arg {
                     given.push((o.long, None));
                     continue;
@@ -102,7 +110,7 @@ pub fn parse(
                 let value = match rest {
                     "" => args
                         .next()
-                        .unwrap_or_else(|| usage_error(prog, format!("option requires an argument -- '{c}'"))),
+                        .ok_or_else(|| format!("option requires an argument -- '{c}'"))?,
                     r => r.to_string(),
                 };
                 given.push((o.long, Some(value)));
@@ -115,5 +123,5 @@ pub fn parse(
             }
         }
     }
-    (given, operands)
+    Ok((given, operands))
 }

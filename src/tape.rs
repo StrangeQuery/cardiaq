@@ -63,6 +63,16 @@ pub fn values(text: &str) -> Result<Vec<i32>, String> {
         .collect()
 }
 
+/// Whether text is meant for a deck: its first line that isn't blank or a `#` comment is a single number, a card.
+/// (A listing's lines are cells, an address and more, or prose.) Such text that doesn't read as a deck is a deck
+/// with something wrong in it, to be said, not taken for something else.
+pub fn is_deck_text(text: &str) -> bool {
+    text.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .is_some_and(|l| number(l.strip_prefix(['+', '-']).unwrap_or(l)))
+}
+
 impl Tape {
     /// A tape of one phase.
     pub fn one(cards: Vec<i32>) -> Tape {
@@ -179,19 +189,26 @@ impl Tape {
             }
             if let Some(c) = l.strip_prefix('#') {
                 let words: Vec<&str> = c.split_whitespace().collect();
-                let slot = |name: &str, at: &str, len: &str, bound| Slot {
-                    name: name.to_string(),
-                    at: at.parse().unwrap(),
-                    len: len.parse().unwrap(),
-                    bound,
+                // a slot is cells of the machine: from a cell 00-99, no further than 99
+                let slot = |name: &str, at: &str, len: &str, bound| match (at.parse::<i32>(), len.parse::<usize>()) {
+                    (Ok(at), Ok(len)) if at < 100 && at as usize + len <= 100 => Ok(Slot {
+                        name: name.to_string(),
+                        at,
+                        len,
+                        bound,
+                    }),
+                    _ => Err(format!(
+                        "line {}: resource {name}: its cells are not cells 00-99",
+                        n + 1
+                    )),
                 };
                 match words.as_slice() {
                     ["phase", n] if number(n) => phases.push(vec![]),
                     ["resource", name, at, len] if is_name(name) && number(at) && number(len) => {
-                        slots.push(slot(name, at, len, false))
+                        slots.push(slot(name, at, len, false)?)
                     }
                     ["resource", name, at, len, "bound"] if is_name(name) && number(at) && number(len) => {
-                        slots.push(slot(name, at, len, true))
+                        slots.push(slot(name, at, len, true)?)
                     }
                     // any other comment
                     _ => {}
@@ -229,7 +246,9 @@ impl Tape {
             ));
         }
         // the first phase's loader cards: (address, value) pairs after the two-card loader, up to the JMP to its start
-        let deck = &mut self.phases[0];
+        let Some(deck) = self.phases.first_mut() else {
+            return Err("the tape has no cards".into());
+        };
         let mut filled = 0;
         let mut i = 2;
         while i + 1 < deck.len() && (0..100).contains(&deck[i]) {
@@ -278,7 +297,10 @@ impl Tape {
                 t.name
             ));
         }
-        let mut deck = self.phases[0].clone();
+        let Some(first) = self.phases.first() else {
+            return Err("the tape has no cards".into());
+        };
+        let mut deck = first.clone();
         deck.extend_from_slice(input);
         Ok(deck)
     }
@@ -392,6 +414,15 @@ mod tests {
         );
         assert_eq!(Tape::load(&path).unwrap(), t);
         assert!(Tape::parse("002\n1000\n").is_err());
+        // a slot past the machine's cells is an error, not a panic
+        assert!(Tape::parse("# resource k 99999999999 2\n002\n").is_err());
+        assert!(Tape::parse("# resource k 98 3\n002\n").is_err());
+        assert!(Tape {
+            phases: vec![],
+            slots: vec![]
+        }
+        .run(&[], 10)
+        .is_err());
     }
 
     #[test]
@@ -488,6 +519,16 @@ mod tests {
         };
         assert_eq!(t.run(&[5, 6], 1000).unwrap().0, vec![5, 6]);
         assert_eq!(t.run(&[5, 6], 1000).unwrap().1, crate::cardiac::Stop::Halt);
+    }
+
+    #[test]
+    fn deck_text_is_told_by_its_first_card() {
+        assert!(is_deck_text("# a comment\n\n002\n800\n"));
+        assert!(is_deck_text("1234\n"));
+        assert!(is_deck_text("-005\n"));
+        assert!(!is_deck_text("10 CLA 20\n"));
+        assert!(!is_deck_text("Program No. 1\n002\n"));
+        assert!(!is_deck_text("# only comments\n"));
     }
 
     #[test]

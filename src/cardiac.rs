@@ -279,8 +279,15 @@ fn run_feeding<'a, const TRACE: bool>(
     overlay: Overlay,
     next: impl FnMut(usize) -> Option<&'a [i32]>,
 ) -> Ended {
+    // a card or a cell holds -999..999, and a host that gives the machine anything else is told so here, not by an
+    // index out of range in the middle of a run
+    assert!(parts.iter().all(|p| p.iter().all(card)), "a card holds -999..999");
     let mut s = Core::cleared();
     if let Some((mem, at)) = from {
+        assert!(
+            mem.iter().all(card) && at < 100,
+            "a cell holds -999..999, and the bug is on 00..99"
+        );
         for (a, &w) in mem.iter().enumerate() {
             s.m[a] = w;
             s.dec[a] = decode(w);
@@ -312,6 +319,11 @@ fn run_feeding<'a, const TRACE: bool>(
         memory: s.m,
         acc: s.acc,
     }
+}
+
+/// Whether a number fits on a card (or in a cell): -999..999.
+fn card(c: &i32) -> bool {
+    (-999..=999).contains(c)
 }
 
 #[inline(always)]
@@ -472,7 +484,7 @@ impl<'a, M: Iterator<Item = i32>, N: FnMut(usize) -> Option<&'a [i32]>> Reader f
                 continue;
             }
             // the deck is read: the next card is asked for now, as this INP runs
-            return self.more.next();
+            return self.more.next().inspect(|c| assert!(card(c), "a card holds -999..999"));
         }
     }
 
@@ -494,6 +506,7 @@ impl<'a, M: Iterator<Item = i32>, N: FnMut(usize) -> Option<&'a [i32]>> Reader f
                 let Some(t) = (self.next)(n) else {
                     return false;
                 };
+                assert!(t.iter().all(card), "a card holds -999..999");
                 self.held.push((self.cur, self.card));
                 self.cur = t;
                 self.card = 0;
@@ -932,6 +945,12 @@ impl Machine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "a card holds -999..999")]
+    fn a_card_too_big_is_the_hosts_mistake_and_said() {
+        run(&[&[2, 800, 10, 1234, 2, 810]], &mut vec![], 1000);
+    }
 
     #[test]
     fn a_negative_word_is_skipped() {

@@ -2,16 +2,24 @@
 //! at a time (`step`), so it sees each instruction run and each cell written, and counts what it needs itself: the
 //! machine runs exactly as it does in `burn`, which pays nothing for any of it.
 //!
-//! A program is a listing (assembled as carc assembles it, its labels, opcodes and comments kept) or a deck (loaded
-//! by its own loader, as burn loads it, and shown disassembled).
+//! A program is a listing (assembled as carc assembles it, its labels, opcodes and comments kept) or a deck (shown
+//! disassembled). Either is loaded by its deck's own loader, as burn loads it: a listing as carc's deck of it, so it
+//! runs in ekg exactly as it runs in burn.
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
 use std::time::Instant;
 
-use heartburn::assemble::{self, written, Assembly, Row, OPS};
+use heartburn::assemble::{self, written, Row, OPS};
 use heartburn::cardiac::{Console, Event, Machine};
 use heartburn::listing::{self, Notes};
 use heartburn::tape::{values, Tape};
+
+#[path = "../cli.rs"]
+mod cli;
+// (its `parse`, which exits on a mistake, is burn's and carc's; ekg reads its options with `try_parse`)
+#[allow(dead_code)]
+#[path = "../getopt.rs"]
+mod getopt;
 
 /// Instructions a `continue` (or a profile) may run before ekg stops it as a program that may never stop.
 const LIMIT: u64 = 1_000_000_000;
@@ -47,22 +55,14 @@ Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
 "
 }
 
-fn version() -> String {
-    format!(
-        "ekg (cardiaq) {}\nCopyright (c) 2026 Strange Query\nLicense MIT: <https://opensource.org/licenses/MIT>\n\
-         This is free software: you are free to change and redistribute it.\n\
-         There is NO WARRANTY, to the extent permitted by law.\n",
-        env!("CARGO_PKG_VERSION")
-    )
-}
-
 fn help() -> &'static str {
     "\
 Commands (a PLACE is a cell, 00-99, a label, or label+N):
   run, r                 start the program again from the beginning, with its INPUT, and continue
   continue, c            run until a breakpoint, a watch, a halt, or an INP with no card
   step, s [N]            run one instruction (or N)
-  next, n [N]            step, but run a routine a JMP calls through: on to the cell after the JMP
+  next, n [N]            step, but run a routine a JMP calls through: on to the cell after the JMP (a JMP
+                         calls when the code it jumps to reads 99, the way back, before another JMP)
   break, b PLACE         stop before the instruction in PLACE runs
   watch PLACE            stop after an instruction writes PLACE
   delete, d [PLACE]      remove the breakpoint and watch on PLACE (all of them without one)
@@ -71,7 +71,7 @@ Commands (a PLACE is a cell, 00-99, a label, or label+N):
   print, p PLACE         a cell: its word, and the word as an instruction (also: p acc, p pc)
   x PLACE [N]            the words in N cells from PLACE (10 unless given)
   list, l [PLACE]        the listing around the PC (or PLACE), the PC marked >, breakpoints b
-  set PLACE VALUE        write a cell (also: set acc VALUE, set pc CELL)
+  set PLACE VALUE        write a cell (also: set acc VALUE, set pc PLACE)
   input CARDS...         put cards in the reader, after those in it
   help, h                this
   quit, q                leave
@@ -80,13 +80,11 @@ An empty line repeats the last step, next or continue.
 }
 
 fn die(why: impl std::fmt::Display) -> ! {
-    eprintln!("ekg: {why}");
-    std::process::exit(1)
+    getopt::die("ekg", why)
 }
 
 fn bad_usage(why: &str) -> ! {
-    eprintln!("ekg: {why}\nTry 'ekg --help' for more information.");
-    std::process::exit(2)
+    getopt::usage_error("ekg", why)
 }
 
 /// A program as ekg holds it: the machine as it is when the program starts, and the listing its cells came from.
@@ -102,52 +100,53 @@ struct Program {
     row_of: [Option<usize>; 100],
 }
 
-/// What is wrong in a listing, compiler style, a line each, on standard error; whether any of it is an error.
-fn report(file: &str, text: &str, asm: &Assembly) -> bool {
-    let lines = assemble::lines(text);
-    for d in &asm.diagnostics {
-        let col = lines[d.line][..d.span.start].chars().count() + 1;
-        let kind = if d.warning { "warning" } else { "error" };
-        eprintln!("ekg: {file}:{}:{col}: {kind}: {}", d.line + 1, d.message);
-    }
-    asm.diagnostics.iter().any(|d| !d.warning)
-}
-
-/// Whether cards look like a deck: they start with the loader's two cards, 002 and 800, as every deck does.
-fn looks_like_a_deck(deck: &Tape) -> bool {
-    deck.phases.first().is_some_and(|cards| cards.starts_with(&[2, 800]))
-}
-
 impl Program {
     /// Load FILE, a deck or a listing (told apart by what is in it, as burn does), the input after its cards.
     fn load(file: &str, start: Option<usize>, input: &[i32]) -> Program {
-        if !Path::new(file).is_file() {
-            die(format!("{file}: No such file or directory"))
-        }
-        match Tape::load(Path::new(file)).ok().filter(looks_like_a_deck) {
-            Some(deck) => Program::from_deck(file, deck, input),
-            None => Program::from_listing(file, start, input),
+        let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {}", getopt::os_error(&e))));
+        match cli::deck_or_not(file, &text, Some(Path::new(file))) {
+            Err(e) => die(e),
+            Ok(Some(_)) if start.is_some() => bad_usage(&format!(
+                "{file}: --start-at is for a listing: a deck starts where its loader jumps"
+            )),
+            Ok(Some(deck)) => Program::from_deck(file, deck, input),
+            Ok(None) => Program::from_listing(file, &text, start, input),
         }
     }
 
-    fn from_listing(file: &str, start: Option<usize>, input: &[i32]) -> Program {
-        let text = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {e}")));
-        let asm = assemble::assemble(&text);
-        if report(file, &text, &asm) {
+    /// A listing, run as carc's deck of it: the loader takes cells 01 and 02 and its jumps write 99, as in burn
+    /// (and ekg warns of a listing that puts anything there, as carc does).
+    fn from_listing(file: &str, text: &str, start: Option<usize>, input: &[i32]) -> Program {
+        let asm = assemble::assemble(text);
+        if cli::report("ekg: ", file, text, &asm, true) {
             die(format!("{file}: not assembled"))
         }
         let Some(start) = start.or(asm.start) else {
             die(format!("{file}: no cells: nothing to run"))
         };
-        let mut m = Machine::new();
-        m.load_cells(&asm.rows.iter().map(|r| (r.addr, r.contents)).collect::<Vec<_>>());
-        m.set_pc(start);
-        m.push(input);
-        Program::new(m, 0, asm.rows)
+        if let Some(w) = cli::start_warning(start, &asm) {
+            eprintln!("ekg: {file}: warning: {w}");
+        }
+        let m = Program::boot(file, &[assemble::deck(&asm, start)], input);
+        let loading = m.steps();
+        Program::new(m, loading, asm.rows)
     }
 
-    /// A deck: its loader run until it hands over to the program (or waits for a card: a deck that ends in the
-    /// manual's BLANK card), and its cells disassembled as `heartburn-tools` lists them.
+    /// A cleared machine with the tapes and then `input` in the reader, its loader run until it hands over to the
+    /// program (or waits for a card: a deck that ends in the manual's BLANK card).
+    fn boot(file: &str, phases: &[Vec<i32>], input: &[i32]) -> Machine {
+        let mut m = Machine::with_tapes(phases, input);
+        while m.pc() <= 2 && m.steps() < 10 * phases[0].len() as u64 + 10 {
+            match m.step(&mut vec![]) {
+                Event::Budget => {}
+                Event::Input => break,
+                e => die(format!("{file}: the loader stopped ({e:?}) at cell {:02}", m.pc())),
+            }
+        }
+        m
+    }
+
+    /// A deck: loaded by its loader (`boot`), and its cells disassembled as `heartburn-tools` lists them.
     fn from_deck(file: &str, mut deck: Tape, input: &[i32]) -> Program {
         let dir = Path::new(file)
             .parent()
@@ -159,14 +158,7 @@ impl Program {
         let loaded = listing::from_deck(&first).unwrap_or_else(|e| die(format!("{file}: {e}")));
         let mut phases = deck.phases.clone();
         phases[0] = first;
-        let mut m = Machine::with_tapes(&phases, input);
-        while m.pc() <= 2 && m.steps() < 10 * phases[0].len() as u64 + 10 {
-            match m.step(&mut vec![]) {
-                Event::Budget => {}
-                Event::Input => break,
-                e => die(format!("{file}: the loader stopped ({e:?}) at cell {:02}", m.pc())),
-            }
-        }
+        let m = Program::boot(file, &phases, input);
         let text = listing::six_columns(&loaded.cells, loaded.start, &Notes::default());
         let loading = m.steps();
         Program::new(m, loading, assemble::assemble(&text).rows)
@@ -308,6 +300,11 @@ enum Stop {
     Limit,
 }
 
+/// Said when a program in phases stops for deck `k`.
+fn fed(k: usize) {
+    println!("HRS {k:02}: deck {k} goes in the reader, and the loader starts at 00");
+}
+
 /// A debugging session: the program, the machine running it, the breakpoints and watches.
 struct Session<'a> {
     p: &'a Program,
@@ -328,13 +325,16 @@ impl Session<'_> {
     /// watched cell, at a halt, or at an INP with no card. `over`: a JMP counts as one, the routine it calls run
     /// through (`through`).
     fn go(&mut self, n: u64, over: bool, fresh: bool) -> Stop {
+        if !over && !self.watches.contains(&true) {
+            return self.go_fast(n, fresh);
+        }
         for i in 0..n {
             let pc = self.m.pc();
             if (i > 0 || fresh) && self.breaks[pc] {
                 return Stop::Break;
             }
             let w = self.m.cell(pc);
-            let stop = if over && w >= 0 && w / 100 == 8 {
+            let stop = if over && w >= 0 && w / 100 == 8 && self.is_call((w % 100) as usize) {
                 self.through(pc)
             } else {
                 self.one()
@@ -344,6 +344,66 @@ impl Session<'_> {
             }
         }
         Stop::Done
+    }
+
+    /// `go` with nothing watched and no routine to run through: the machine runs to a breakpoint itself (they are
+    /// set in it, `Machine::set_break`), at no cost per instruction, rather than an instruction at a time.
+    fn go_fast(&mut self, n: u64, fresh: bool) -> Stop {
+        let end = self.m.steps().saturating_add(n);
+        if self.breaks[self.m.pc()] {
+            if fresh {
+                return Stop::Break;
+            }
+            // on from the breakpoint it is stopped on: its instruction, then on
+            if let Some(stop) = self.one() {
+                return stop;
+            }
+            if self.breaks[self.m.pc()] {
+                return Stop::Break;
+            }
+        }
+        for c in 0..100 {
+            match (self.breaks[c], self.m.is_break(c)) {
+                (true, false) => self.m.set_break(c),
+                (false, true) => self.m.clear_break(c),
+                _ => {}
+            }
+        }
+        loop {
+            let left = end.saturating_sub(self.m.steps());
+            match self.m.run(left, &mut Teletype { profile: false }) {
+                Event::Budget => return Stop::Done,
+                Event::Break => return Stop::Break,
+                // the bug is on HRS's address: the HRS is the last instruction run
+                Event::Halt => return Stop::Halt(self.m.trail()[2]),
+                Event::Input => return Stop::Input,
+                Event::Tape(k) => {
+                    fed(k);
+                    if self.m.steps() >= end {
+                        return Stop::Done;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a JMP to `to` calls a routine, by the CARDIAC convention: the code it jumps to reads the way back the
+    /// JMP leaves in 99 (`CLA 99` to keep it, or `JMP 99` to go back) before another JMP writes over it. The cells
+    /// from `to` are read as they are now, in order, up to the first JMP or HRS; a TAC's branch isn't followed.
+    fn is_call(&self, to: usize) -> bool {
+        for c in to..100 {
+            let w = self.m.cell(c);
+            if w < 0 {
+                continue;
+            }
+            match (w / 100, w % 100) {
+                (1 | 2 | 5 | 7, 99) => return true,
+                (8, a) => return a == 99,
+                (9, _) => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     /// The JMP in `jmp`, and the routine it calls: on until the bug is back on the cell after the JMP, where the
@@ -375,7 +435,7 @@ impl Session<'_> {
         let before = watched.map(|t| self.m.cell(t));
         let event = self.m.step(&mut Teletype { profile: false });
         if let Event::Tape(k) = event {
-            println!("HRS {k:02}: deck {k} goes in the reader, and the loader starts at 00");
+            fed(k);
         }
         if let (Some(t), Some(old)) = (watched, before) {
             if self.m.written_at()[t] == self.m.steps() {
@@ -608,15 +668,16 @@ impl Session<'_> {
                 let [what, v] = args else {
                     return Err("set PLACE VALUE".into());
                 };
+                if *what == "pc" {
+                    let c = self.p.place(v)?;
+                    self.m.set_pc(c);
+                    self.halted = false;
+                    return Ok(());
+                }
                 let v: i32 = v.parse().map_err(|_| format!("set {what} {v}: not a number"))?;
                 match *what {
                     "acc" if (-9999..=9999).contains(&v) => self.m.set_acc(v),
                     "acc" => return Err("the accumulator holds -9999..9999".into()),
-                    "pc" => {
-                        let c = self.p.place(&v.to_string())?;
-                        self.m.set_pc(c);
-                        self.halted = false;
-                    }
                     _ => {
                         let c = self.p.place(what)?;
                         if !(-999..=999).contains(&v) {
@@ -670,34 +731,26 @@ fn debug(file: &str, p: &Program, o: &Options) {
         }
     }
     if going && !o.batch {
-        let mut lines = std::io::stdin().lock().lines();
+        // read as bytes: a line that isn't UTF-8 is a command not understood, not the end of the session
+        let mut stdin = std::io::stdin().lock();
+        let mut line = vec![];
         loop {
             if tty {
                 print!("(ekg) ");
                 let _ = std::io::stdout().flush();
             }
-            let Some(Ok(line)) = lines.next() else { break };
-            if !s.command(&line) {
+            line.clear();
+            match stdin.read_until(b'\n', &mut line) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(e) => die(format!("standard input: {}", getopt::os_error(&e))),
+            }
+            if !s.command(String::from_utf8_lossy(&line).trim_end_matches(['\n', '\r'])) {
                 break;
             }
         }
     }
     std::process::exit((o.batch && s.failed) as i32)
-}
-
-/// Standard input as the card reader: each number a card, read when the program asks for one.
-fn stdin_cards() -> impl Iterator<Item = i32> {
-    let mut lines = std::io::stdin().lock().lines();
-    let mut pending: std::vec::IntoIter<i32> = vec![].into_iter();
-    std::iter::from_fn(move || loop {
-        if let Some(c) = pending.next() {
-            return Some(c);
-        }
-        let line = lines.next()?.unwrap_or_else(|e| die(format!("standard input: {e}")));
-        pending = values(&line)
-            .unwrap_or_else(|e| die(format!("standard input: {e}")))
-            .into_iter();
-    })
 }
 
 /// What a profile counts, cell by cell: the instructions each ran, and the times each was written.
@@ -743,10 +796,12 @@ fn profile_run(m: &mut Machine, limit: u64, more: &mut impl Iterator<Item = i32>
 fn profile(file: &str, p: &Program, limit: u64, stdin: bool) {
     let mut m = p.start.clone();
     let t = Instant::now();
+    // the limit is on the program's instructions, the loader's not among them
+    let end = limit.saturating_add(p.loading);
     let (c, why) = if stdin {
-        profile_run(&mut m, limit, &mut stdin_cards())
+        profile_run(&mut m, end, &mut cli::stdin_cards("ekg"))
     } else {
-        profile_run(&mut m, limit, &mut std::iter::empty())
+        profile_run(&mut m, end, &mut std::iter::empty())
     };
     let dt = t.elapsed().as_secs_f64();
     let _ = std::io::stderr().flush();
@@ -830,22 +885,57 @@ struct Options {
     start: Option<usize>,
 }
 
-/// The long options, and whether each takes an argument.
-const LONG: [(&str, bool); 9] = [
-    ("eval-command", true),
-    ("batch", false),
-    ("quiet", false),
-    ("silent", false),
-    ("profile", false),
-    ("limit", true),
-    ("start-at", true),
-    ("help", false),
-    ("version", false),
+/// The options: `-x` and `-q` have letters too.
+const OPTS: [getopt::Opt; 9] = [
+    getopt::Opt {
+        short: Some('x'),
+        long: "eval-command",
+        arg: true,
+    },
+    getopt::Opt {
+        short: None,
+        long: "batch",
+        arg: false,
+    },
+    getopt::Opt {
+        short: Some('q'),
+        long: "quiet",
+        arg: false,
+    },
+    getopt::Opt {
+        short: None,
+        long: "silent",
+        arg: false,
+    },
+    getopt::Opt {
+        short: None,
+        long: "profile",
+        arg: false,
+    },
+    getopt::Opt {
+        short: None,
+        long: "limit",
+        arg: true,
+    },
+    getopt::Opt {
+        short: None,
+        long: "start-at",
+        arg: true,
+    },
+    getopt::Opt {
+        short: None,
+        long: "help",
+        arg: false,
+    },
+    getopt::Opt {
+        short: None,
+        long: "version",
+        arg: false,
+    },
 ];
 
-/// Read the command line as GNU getopt_long does: short options (`-x CMD`, `-xCMD`, `-qx CMD`), long ones
-/// (`--name=VALUE` or `--name VALUE`, any unambiguous prefix of a name), operands anywhere among them, and every
-/// argument after `--` an operand. The first operand is the file, the rest the input.
+/// Read the command line as GNU getopt_long does (`getopt`, as burn and carc read theirs): options anywhere among
+/// the operands, every argument after `--` an operand. The first operand is the file, the rest the input.
 fn options(args: &[String]) -> Result<Options, String> {
     let mut o = Options {
         file: None,
@@ -857,63 +947,9 @@ fn options(args: &[String]) -> Result<Options, String> {
         limit: LIMIT,
         start: None,
     };
-    let mut operands = vec![];
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--" {
-            operands.extend(it.by_ref().cloned());
-        } else if let Some(long) = a.strip_prefix("--") {
-            let (name, value) = match long.split_once('=') {
-                Some((n, v)) => (n, Some(v.to_string())),
-                None => (long, None),
-            };
-            let matches: Vec<(&str, bool)> = match LONG.iter().find(|l| l.0 == name) {
-                Some(&l) => vec![l],
-                None => LONG.iter().copied().filter(|l| l.0.starts_with(name)).collect(),
-            };
-            let (name, takes) = match matches[..] {
-                [l] => l,
-                [] => return Err(format!("unrecognized option '--{name}'")),
-                _ => {
-                    let all: Vec<String> = matches.iter().map(|l| format!("'--{}'", l.0)).collect();
-                    return Err(format!(
-                        "option '--{name}' is ambiguous; possibilities: {}",
-                        all.join(" ")
-                    ));
-                }
-            };
-            let value = match (takes, value) {
-                (true, Some(v)) => Some(v),
-                (true, None) => Some(
-                    it.next()
-                        .ok_or_else(|| format!("option '--{name}' requires an argument"))?
-                        .clone(),
-                ),
-                (false, Some(_)) => return Err(format!("option '--{name}' doesn't allow an argument")),
-                (false, None) => None,
-            };
-            o.set(name, value)?;
-        } else if a.len() > 1 && a.starts_with('-') {
-            let flags = a[1..].char_indices();
-            for (i, c) in flags {
-                match c {
-                    'q' => o.set("quiet", None)?,
-                    'x' => {
-                        let rest = &a[2 + i..];
-                        let cmd = if rest.is_empty() {
-                            it.next().ok_or("option requires an argument -- 'x'")?.clone()
-                        } else {
-                            rest.to_string()
-                        };
-                        o.set("eval-command", Some(cmd))?;
-                        break;
-                    }
-                    _ => return Err(format!("invalid option -- '{c}'")),
-                }
-            }
-        } else {
-            operands.push(a.clone());
-        }
+    let (given, operands) = getopt::try_parse(&OPTS, args.iter().cloned(), false)?;
+    for (name, value) in given {
+        o.set(name, value)?;
     }
     let mut operands = operands.into_iter();
     o.file = operands.next();
@@ -945,10 +981,10 @@ impl Options {
                 std::process::exit(0)
             }
             "version" => {
-                print!("{}", version());
+                getopt::version("ekg");
                 std::process::exit(0)
             }
-            _ => unreachable!("an option in LONG"),
+            _ => unreachable!("an option in OPTS"),
         }
         Ok(())
     }

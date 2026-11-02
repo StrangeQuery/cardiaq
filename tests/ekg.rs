@@ -75,7 +75,7 @@ fn a_breakpoint_by_label_stops_before_its_instruction() {
     let cards: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("out: ")).collect();
     assert_eq!(cards, ["3", "5", "4", "3", "5", "5"], "{out}");
     assert!(
-        out.ends_with("halted: HRS in cell 82, after 128 instructions\n"),
+        out.ends_with("halted: HRS in cell 82, after 422 instructions\n"),
         "{out}"
     );
 }
@@ -118,7 +118,7 @@ fn a_watch_stops_when_the_program_rewrites_its_code() {
         "{out}"
     );
     assert!(
-        out.ends_with("halted: HRS in cell 82, after 128 instructions\n"),
+        out.ends_with("halted: HRS in cell 82, after 422 instructions\n"),
         "{out}"
     );
 }
@@ -163,7 +163,7 @@ fn next_runs_a_routine_through() {
     assert!(ok, "{out}");
     assert_eq!(
         out,
-        "11   530           OUT  n\nout: 42\n12   900           HRS  00\nout: 42\nhalted: HRS in cell 12, after 9 instructions\n"
+        "11   530           OUT  n\nout: 42\n12   900           HRS  00\nout: 42\nhalted: HRS in cell 12, after 45 instructions\n"
     );
     // step goes into it
     let (ok, out, _) = script(f, &["s"], &[]);
@@ -191,7 +191,7 @@ fn an_inp_with_no_card_waits_for_input() {
     assert!(out.contains("INP in cell 18 is waiting"), "{out}");
     assert!(
         out.ends_with(
-            "out: 579\nhalted: HRS in cell 23, after 7 instructions\nthe program has halted: run starts it again\n"
+            "out: 579\nhalted: HRS in cell 23, after 34 instructions\nthe program has halted: run starts it again\n"
         ),
         "{out}"
     );
@@ -207,7 +207,9 @@ fn a_profile_counts_runs_writes_and_what_never_ran() {
     // the program's cards on standard error, the report on standard output
     assert_eq!(err, "3\n5\n4\n3\n5\n5\n");
     assert!(
-        out.starts_with(&format!("{SORTEM}: halted after 128 instructions, in ")),
+        out.starts_with(&format!(
+            "{SORTEM}: halted after 128 instructions (and 294 loading the deck), in "
+        )),
         "{out}"
     );
     assert!(
@@ -245,13 +247,7 @@ fn a_deck_is_loaded_by_its_loader_and_disassembled() {
     let deck = dir("deck").join("add.cqb");
     let (ok, _, said) = run(
         env!("CARGO_BIN_EXE_carc"),
-        &[
-            "tests/manual/add.cq",
-            "--start-at",
-            "17",
-            "-o",
-            deck.to_str().unwrap(),
-        ],
+        &["tests/manual/add.cq", "--start-at", "17", "-o", deck.to_str().unwrap()],
         "",
     );
     assert!(ok, "{said}");
@@ -295,10 +291,7 @@ fn a_listing_with_errors_is_not_run() {
         format!("ekg: {f}:1:8: error: unknown label x\nekg: {f}: not assembled\n")
     );
     let (ok, _, err) = ekg(&["nowhere.cq"]);
-    assert!(
-        !ok && err == "ekg: nowhere.cq: No such file or directory\n",
-        "{err}"
-    );
+    assert!(!ok && err == "ekg: nowhere.cq: No such file or directory\n", "{err}");
 }
 
 #[test]
@@ -314,7 +307,7 @@ fn a_run_that_never_stops_is_stopped_at_the_limit() {
         ),
         "{out}"
     );
-    assert!(out.contains("pc 10  acc +0000  steps 2000  reader []"), "{out}");
+    assert!(out.contains("pc 10  acc +0000  steps 2009  reader []"), "{out}");
     let (ok, out, err) = ekg(&["--profile", "--limit", "1000", f]);
     assert!(!ok && err.contains("still running after 1000 instructions"), "{err}");
     assert!(
@@ -348,4 +341,92 @@ fn help_version_and_usage_errors_are_gnu_style() {
     usage(&["--frob", SORTEM], "unrecognized option '--frob'");
     usage(&[], "no program: give it a FILE");
     usage(&[SORTEM, "x"], "not a card: x (a card holds a number from -999 to 999)");
+}
+
+/// A listing runs in ekg as carc's deck of it runs in burn: the loader takes cells 01 and 02 and its jumps write
+/// 99, and ekg warns of a listing that puts anything there, as carc does.
+#[test]
+fn a_listing_runs_as_its_deck_runs_in_burn() {
+    let f = dir("loader").join("loader.cq");
+    std::fs::write(&f, "02 042\n10 OUT 99\n11 OUT 02\n12 HRS\n").unwrap();
+    let f = f.to_str().unwrap();
+    let (ok, out, err) = script(f, &["c"], &[]);
+    assert!(ok, "{out}{err}");
+    assert!(out.starts_with("out: 803\nout: 810\n"), "{out}");
+    assert_eq!(
+        err,
+        format!("ekg: {f}:1:1: warning: cell 02 is the loader's: it is not on the deck\n")
+    );
+}
+
+#[test]
+fn a_deck_with_something_wrong_says_what() {
+    let d = dir("baddeck");
+    let f = d.join("bad.cqb");
+    std::fs::write(&f, "002\n800\n010\n1234\n002\n810\n").unwrap();
+    let (ok, _, err) = ekg(&[f.to_str().unwrap()]);
+    assert!(!ok && err.ends_with("bad.cqb: line 4: not a card: 1234\n"), "{err}");
+    // --start-at is for a listing
+    let deck = d.join("add.cqb");
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_carc"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["tests/manual/add.cq", "--start-at", "17", "-o", deck.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(o.status.success());
+    let (ok, _, err) = ekg(&["--start-at", "20", deck.to_str().unwrap()]);
+    assert!(!ok && err.contains("--start-at is for a listing"), "{err}");
+}
+
+/// `next` runs through a JMP only when it calls (the code it jumps to reads 99); over a plain jump it steps.
+#[test]
+fn next_over_a_plain_jump_is_a_step() {
+    let f = dir("jump").join("jump.cq");
+    std::fs::write(&f, "10 start JMP on\n20 on OUT n\n21 HRS\n30 n DATA 7\n").unwrap();
+    let (ok, out, _) = script(f.to_str().unwrap(), &["n"], &[]);
+    assert!(ok && out == "20   530  on       OUT  n\n", "{out}");
+}
+
+/// `set pc` takes a place, a label as well as a cell; a line of standard input that isn't UTF-8 is a command not
+/// understood, and the session goes on.
+#[test]
+fn set_pc_takes_a_label_and_odd_bytes_are_not_the_end() {
+    let f = dir("setpc").join("p.cq");
+    std::fs::write(&f, "10 start OUT n\n11 HRS\n20 two OUT n\n21 HRS\n30 n DATA 7\n").unwrap();
+    let f = f.to_str().unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_ekg"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["-q", f])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"\xff\xfe\nset pc two\np pc\n")
+        .unwrap();
+    let o = child.wait_with_output().unwrap();
+    let (out, err) = (
+        String::from_utf8(o.stdout).unwrap(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    );
+    assert_eq!(out, "pc = 20\n", "{err}");
+    assert!(err.contains("not a command"), "{err}");
+}
+
+/// A breakpoint stops a `continue` run by the machine itself, and a continue from it goes on to the next.
+#[test]
+fn continue_stops_at_each_breakpoint() {
+    let f = dir("breaks").join("b.cq");
+    std::fs::write(&f, "10 start OUT n\n11 a OUT n\n12 b OUT n\n13 HRS\n30 n DATA 7\n").unwrap();
+    let (ok, out, _) = script(f.to_str().unwrap(), &["b a", "b b", "c", "c", "c"], &[]);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out,
+        "breakpoint at 11 (a)\nbreakpoint at 12 (b)\nout: 7\nbreakpoint, cell 11\n11   530  a        OUT  n\nout: 7\n\
+         breakpoint, cell 12\n12   530  b        OUT  n\nout: 7\nhalted: HRS in cell 13, after 25 instructions\n"
+    );
 }
