@@ -470,43 +470,37 @@ const WRITTEN_OPS: [&str; 12] = [
     "INP", "CLA", "ADD", "TAC", "SFT", "OUT", "STO", "SUB", "JMP", "HRS", "DATA", "DAT",
 ];
 
+/// What is wrong with `t`, a word where an opcode goes (`next` the word after it), when it is an opcode mistyped,
+/// said in pieces: `out` (opcodes are capitals), `OUT20` (no space before the operand), or another three capitals
+/// before an operand (`OTU 20`). None when it may be anything else.
+#[inline(never)]
+fn mistyped<'t>(t: &'t str, next: Option<&str>) -> Option<[&'t str; 4]> {
+    let operand_next = next.is_none_or(is_operand);
+    if let Some(op) = WRITTEN_OPS.iter().find(|o| o.eq_ignore_ascii_case(t)) {
+        return operand_next.then_some([" is not an opcode: opcodes are capitals, ", op, "", ""]);
+    }
+    if let Some(op) = WRITTEN_OPS.iter().find(|o| t.len() > o.len() && t.starts_with(*o)) {
+        let rest = t.get(op.len()..).unwrap_or_default();
+        if is_operand(rest) {
+            return Some([" is not an opcode: a space goes between ", op, " and ", rest]);
+        }
+    }
+    let capitals = t.len() == 3 && t.bytes().all(|b| b.is_ascii_uppercase());
+    (capitals && next.is_some() && operand_next).then_some([" is not an opcode", "", "", ""])
+}
+
 /// A line that starts with a cell's address but isn't a cell: an opcode mistyped where one goes (`out`, `OTU`,
 /// `OUT20`), or a line that names an opcode elsewhere. A cell's line is never one; a manual's table row
 /// (`14  N(start)  N = ...`) is neither, and stays prose.
 fn stray(ln: usize, line: &str) -> Option<Diagnostic> {
     let w = words(line);
     if let Some((_, a)) = w.first().filter(|(_, a)| (1..=2).contains(&a.len()) && digits(a)) {
-        let flag = |span: &Range<usize>, why: &[&str]| {
-            let mut msg = ["cell ", &num(value(a), 2), ": "].concat();
-            why.iter().for_each(|p| msg.push_str(p));
-            msg.push_str(": not loaded");
-            Some(error(ln, span.clone(), msg))
-        };
         // where the opcode goes: after the address, or after a label
         for k in 1..w.len().min(3) {
             let (span, t) = &w[k];
-            let operand_next = w.get(k + 1).is_none_or(|(_, n)| is_operand(n));
-            if let Some(op) = WRITTEN_OPS.iter().find(|o| o.eq_ignore_ascii_case(t)) {
-                if operand_next {
-                    return flag(span, &[t, " is not an opcode: opcodes are capitals, ", op]);
-                }
-            }
-            if let Some(op) = WRITTEN_OPS.iter().find(|o| t.len() > o.len() && t.starts_with(*o)) {
-                if is_operand(&t[op.len()..]) {
-                    return flag(
-                        span,
-                        &[
-                            t,
-                            " is not an opcode: a space goes between ",
-                            op,
-                            " and ",
-                            &t[op.len()..],
-                        ],
-                    );
-                }
-            }
-            if t.len() == 3 && t.bytes().all(|b| b.is_ascii_uppercase()) && w.len() > k + 1 && operand_next {
-                return flag(span, &[t, " is not an opcode"]);
+            if let Some(why) = mistyped(t, w.get(k + 1).map(|(_, n)| *n)) {
+                let msg = ["cell ", &num(value(a), 2), ": ", t, why[0], why[1], why[2], why[3], ": not loaded"].concat();
+                return Some(error(ln, span.clone(), msg));
             }
             if !is_label(t) {
                 break;
