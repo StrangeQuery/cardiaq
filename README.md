@@ -49,8 +49,9 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per
 | [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc` |
 | [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
-| [`pace`](#pace-and-lub) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
-| [`lub`](#pace-and-lub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
+| [`pace`](#pace-lub-and-dub) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
+| [`lub`](#pace-lub-and-dub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
+| [`dub`](#pace-lub-and-dub) | decodes two tapes, left and right, each on a CARDIAC, and outputs them as stereo | `flac -d`, `mpg123` |
 
 The commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
@@ -324,7 +325,7 @@ speed, and `burn` pays nothing for it.
 Exit status is 0 on success, 1 when something failed (a listing with errors; with `--batch`, a command; in a profile,
 a run stopped at the limit), 2 for a usage error.
 
-## pace and lub
+## pace, lub and dub
 
 Audio a CARDIAC decodes. `pace` codes one channel of raw samples (signed 16-bit, little-endian) as a tape of
 cards; `lub` runs the decoder, [`audio/decode.cq`](audio/decode.cq), on a CARDIAC, and outputs each sample as the
@@ -333,10 +334,16 @@ CARDIAC decodes it:
     ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | pace > song.left.tape
     lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 
+`dub` plays stereo: two tapes, each decoded by a CARDIAC of its own. The two take turns on one thread, a block of
+64 samples each, and `dub` writes their samples left then right:
+
+    ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | pace > song.right.tape
+    dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
+
 The coding is a decimal ADPCM made for CARDIAC's arithmetic: blocks of 64 samples, each with a step of M x 10^K,
 and a three-digit code a sample that corrects a prediction, the line through the last two samples. The decoder
 keeps each sample in two cells and outputs it as two values, the thousands and then the units, because -999 to
-999 is too few levels for good sound; `lub` puts each pair back together into a 16-bit sample. Every prediction,
+999 is too few levels for good sound; `lub` and `dub` put each pair back together into a 16-bit sample. Every prediction,
 correction and carry is worked out on the CARDIAC: about 41 instructions a sample, 2 million a second for 48 kHz.
 
 ## How fast

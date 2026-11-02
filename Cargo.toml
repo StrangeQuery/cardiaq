@@ -28,7 +28,8 @@ path = "src/bin/carc.rs"
 name = "ekg"
 path = "src/bin/ekg.rs"
 
-# audio a CARDIAC decodes: pace codes a channel as a tape, lub decodes it on a CARDIAC and outputs the samples
+# audio a CARDIAC decodes: pace codes a channel as a tape, lub decodes it on a CARDIAC and outputs the samples,
+# dub decodes two, left and right, each on a CARDIAC of its own, and outputs them as one stereo stream
 [[bin]]
 name = "pace"
 path = "src/bin/pace.rs"
@@ -36,6 +37,10 @@ path = "src/bin/pace.rs"
 [[bin]]
 name = "lub"
 path = "src/bin/lub.rs"
+
+[[bin]]
+name = "dub"
+path = "src/bin/dub.rs"
 
 # The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Not installed by
 # `cargo install heartburn` (it needs the feature); the tests build it.
