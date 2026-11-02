@@ -34,7 +34,7 @@ pub fn os_error(e: &std::io::Error) -> String {
 /// `--version`: the program, its package, its version; the copyright and the licence.
 pub fn version(prog: &str) {
     println!(
-        "{prog} (cardiaq) {}\nCopyright (c) 2026 Jason Whittington\nLicense MIT: <https://opensource.org/licenses/MIT>\n\
+        "{prog} (cardiaq) {}\nCopyright (c) 2026 Strange Query\nLicense MIT: <https://opensource.org/licenses/MIT>\n\
          This is free software: you are free to change and redistribute it.\n\
          There is NO WARRANTY, to the extent permitted by law.",
         env!("CARGO_PKG_VERSION")

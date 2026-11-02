@@ -49,7 +49,7 @@ Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
 
 fn version() -> String {
     format!(
-        "ekg (cardiaq) {}\nCopyright (C) 2026 Jason Whittington.\nLicense MIT: <https://opensource.org/licenses/MIT>.\n\
+        "ekg (cardiaq) {}\nCopyright (c) 2026 Strange Query\nLicense MIT: <https://opensource.org/licenses/MIT>\n\
          This is free software: you are free to change and redistribute it.\n\
          There is NO WARRANTY, to the extent permitted by law.\n",
         env!("CARGO_PKG_VERSION")
