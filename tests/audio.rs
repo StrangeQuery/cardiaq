@@ -1,4 +1,4 @@
-//! pace and lub as a user runs them: samples in, a tape, the samples a CARDIAC decodes from it out.
+//! xtrack and lub as a user runs them: samples in, a tape, the samples a CARDIAC decodes from it out.
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
@@ -25,10 +25,10 @@ fn tone() -> Vec<i16> {
 }
 
 #[test]
-fn lub_plays_what_pace_codes() {
+fn lub_plays_what_xtrack_codes() {
     let xs = tone();
     let raw: Vec<u8> = xs.iter().flat_map(|s| s.to_le_bytes()).collect();
-    let tape = run(env!("CARGO_BIN_EXE_pace"), &[], &raw);
+    let tape = run(env!("CARGO_BIN_EXE_xtrack"), &[], &raw);
     assert!(tape.status.success(), "{}", String::from_utf8_lossy(&tape.stderr));
     let (cards, expected) = heartburn::audio::encode(&xs);
     let text: String = cards.iter().map(|c| format!("{c}\n")).collect();
@@ -64,12 +64,12 @@ fn lub_says_which_line_isnt_a_card() {
 }
 
 #[test]
-fn pace_refuses_half_a_sample() {
-    let tape = run(env!("CARGO_BIN_EXE_pace"), &[], &[1, 2, 3]);
+fn xtrack_refuses_half_a_sample() {
+    let tape = run(env!("CARGO_BIN_EXE_xtrack"), &[], &[1, 2, 3]);
     assert_eq!(tape.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&tape.stderr),
-        "pace: standard input: an odd number of bytes: not 16-bit samples\n"
+        "xtrack: standard input: an odd number of bytes: not 16-bit samples\n"
     );
 }
 

@@ -1,4 +1,4 @@
-//! pace: code one channel of audio as a tape for the CARDIAC decoder, `audio/decode.cq`, which lub and dub run.
+//! xtrack: code one channel of audio as a tape for the CARDIAC decoder, `audio/decode.cq`, which lub and dub run.
 //! The coding is `heartburn::audio::encode`; this reads the samples and writes the cards.
 use std::io::{IsTerminal, Read, Write};
 
@@ -7,11 +7,11 @@ use heartburn::audio;
 #[path = "../getopt.rs"]
 mod getopt;
 
-const PROG: &str = "pace";
+const PROG: &str = "xtrack";
 
 fn usage() -> &'static str {
     "\
-Usage: pace [OPTION]... [FILE]
+Usage: xtrack [OPTION]... [FILE]
 Code one channel of audio as a tape for CARDIAC to decode (lub plays it).
 
 FILE is raw samples: one channel, signed 16-bit little-endian, at any rate (48000 a second, say); with no FILE,
@@ -20,7 +20,7 @@ or FILE -, they are read from standard input. The tape goes to standard output, 
 
 To make the samples with ffmpeg (the left channel of song.wav, at 48 kHz):
 
-  ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | pace > song.left.tape
+  ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | xtrack > song.left.tape
 
   -h, --help     display this help and exit
       --version  output version information and exit

@@ -19,7 +19,7 @@ fn usage() -> &'static str {
 Usage: lub [OPTION]... [TAPE]
 Decode one channel of audio on a CARDIAC, and output its samples as they are decoded.
 
-TAPE is the channel as pace codes it, a card a line; with no TAPE, or TAPE -, it is read from standard input. The
+TAPE is the channel as xtrack codes it, a card a line; with no TAPE, or TAPE -, it is read from standard input. The
 samples go to standard output, raw: signed 16-bit little-endian, at the rate the audio was coded at. To play
 them with ffplay (or write them to a file):
 

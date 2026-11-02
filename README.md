@@ -49,7 +49,7 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per
 | [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc` |
 | [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
-| [`pace`](#pace) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
+| [`xtrack`](#xtrack) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
 | [`lub`](#lub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
 | [`dub`](#dub) | decodes two tapes, left and right, each on a CARDIAC, and outputs them as stereo | `flac -d`, `mpg123` |
 
@@ -327,10 +327,10 @@ a run stopped at the limit), 2 for a usage error.
 
 ## Audio
 
-`pace`, `lub` and `dub` play sound decoded by CARDIAC. Every prediction, correction and carry of every sample is
+`xtrack`, `lub` and `dub` play sound decoded by CARDIAC. Every prediction, correction and carry of every sample is
 worked out on a CARDIAC; the host's part is cards in and samples out:
 
-1. `pace` codes a channel of audio as a tape of cards, ahead of time.
+1. `xtrack` codes a channel of audio as a tape of cards, ahead of time.
 2. `lub` (one channel) or `dub` (two, stereo) runs the decoder, [`audio/decode.cq`](audio/decode.cq), on a
    CARDIAC for each channel, feeding it the tape's cards as its INPs ask for them.
 3. The decoder outputs each sample as two values, the thousands and then the units, because -999 to 999 is too few
@@ -339,8 +339,8 @@ worked out on a CARDIAC; the host's part is cards in and samples out:
 
 From a wav file to the speakers, with `ffmpeg` to read the audio and `ffplay` to play the samples:
 
-    ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | pace > song.left.tape
-    ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | pace > song.right.tape
+    ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | xtrack > song.left.tape
+    ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | xtrack > song.right.tape
 
     lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
     dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
@@ -355,18 +355,18 @@ and a three-digit code a sample that corrects a prediction, the line through the
 about 41 instructions a sample, 2 million a second for a channel at 48 kHz. How it was built, and why it has to be
 this way: [docs/AUDIO.md](docs/AUDIO.md).
 
-## pace
+## xtrack
 
-`pace` codes one channel of audio as a tape for the decoder.
+`xtrack` codes one channel of audio as a tape for the decoder.
 
-    pace song.left.s16 > song.left.tape    # raw samples from a file
-    ... | pace > song.left.tape            # or from standard input
+    xtrack song.left.s16 > song.left.tape    # raw samples from a file
+    ... | xtrack > song.left.tape            # or from standard input
 
 **Input.** Raw samples, one channel, signed 16-bit little-endian, at any rate (the rate isn't on the tape: tell the
 player). `ffmpeg -af 'pan=mono|c0=c0' -f s16le` makes them from any audio file; `c0=c1` takes the right channel.
 
 **The tape** goes to standard output, a card a line: for each block of 64 samples, its step's K and M, then a card a
-sample, -500 to 499; then -1, the end. For each block `pace` tries every step and keeps the one with the least error,
+sample, -500 to 499; then -1, the end. For each block `xtrack` tries every step and keeps the one with the least error,
 each code chosen against the sample the decoder will make (so errors don't pile up). It takes about a quarter of a
 second for 16 seconds of audio.
 
@@ -384,7 +384,7 @@ can't be written, 2 for a mistake on the command line.
 the CARDIAC decodes it.
 
     lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
-    pace < song.left.s16 | lub | ffplay ...    # the tape on standard input
+    xtrack < song.left.s16 | lub | ffplay ...    # the tape on standard input
 
 **Output.** Raw samples, signed 16-bit little-endian, mono. `lub` won't write them to a terminal: pipe them to a
 player or into a file. When the player stops reading, `lub` stops too, quietly.
@@ -405,7 +405,7 @@ isn't one the decoder can decode, 2 for a mistake on the command line.
 `dub` plays stereo: two tapes, left and right, each decoded by a CARDIAC of its own.
 
     dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
-    pace < song.left.s16 | dub - song.right.tape | ffplay ...    # one tape may be standard input
+    xtrack < song.left.s16 | dub - song.right.tape | ffplay ...    # one tape may be standard input
 
 **How.** The two CARDIACs take turns on one thread, a block at a time: the left one is given its tape's next 66
 cards (a header and 64 codes) and runs until it asks for more, then the right one. `dub` puts each channel's pairs of

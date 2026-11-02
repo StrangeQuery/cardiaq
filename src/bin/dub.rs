@@ -21,7 +21,7 @@ fn usage() -> &'static str {
 Usage: dub [OPTION]... LEFT RIGHT
 Decode two channels of audio, each on a CARDIAC, and output them as one stereo stream as they are decoded.
 
-LEFT and RIGHT are the channels' tapes as pace codes them, a card a line; one of them may be -, standard input.
+LEFT and RIGHT are the channels' tapes as xtrack codes them, a card a line; one of them may be -, standard input.
 The samples go to standard output, raw: signed 16-bit little-endian, left then right, at the rate the audio was
 coded at. To play them with ffplay (or write them to a file):
 

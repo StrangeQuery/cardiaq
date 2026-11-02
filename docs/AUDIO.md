@@ -10,7 +10,7 @@ commands that play a channel as it is decoded, and then `lub`, the mono player a
 stereo, ending with `dub`.
 
 In this repository: the decoder is [`audio/decode.cq`](../audio/decode.cq); the coding is `heartburn::audio`
-([`src/audio.rs`](../src/audio.rs)); `pace` codes a channel, `lub` plays one and `dub` plays two
+([`src/audio.rs`](../src/audio.rs)); `xtrack` codes a channel, `lub` plays one and `dub` plays two
 ([`src/bin/`](../src/bin/)). [`encode.py`](encode.py), beside this page, is the encoder as it was first written,
 the reference the Rust one was checked against.
 
@@ -411,7 +411,7 @@ def main():
 main()
 ```
 
-It is slow: about 30 seconds for 16 seconds of one channel, all of it in the search over steps. `pace` is the
+It is slow: about 30 seconds for 16 seconds of one channel, all of it in the search over steps. `xtrack` is the
 same encoder in Rust (`heartburn::audio::encode`). It writes the same tape, card for card, in a quarter of a
 second, and rounds halves to the even number as Python's `round` does, so the two agree. It adds one guard: when
 the prediction overshoots far enough that a small step can't bring the sample back within 16 bits, that step is
@@ -497,10 +497,10 @@ is worked out by the CARDIAC. We played the 16-second test clip this way, and it
 
 `lub` is that pipe's `burn` and Python in one program, about 130 lines with its help and error messages. It runs
 one CARDIAC on the decoder, reads a card of the tape each time an INP asks for one, joins each pair of output
-values into a sample, and writes the sample to standard output as soon as it is made. `pace` makes the tape:
+values into a sample, and writes the sample to standard output as soon as it is made. `xtrack` makes the tape:
 
 ```sh
-ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | $B/pace > song.left.tape
+ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | $B/xtrack > song.left.tape
 $B/lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 ```
 
@@ -517,7 +517,7 @@ exactly the encoder's model, in the library and through the programs.
 | Quality | 69.2 dB signal-to-noise over the 16-second stereo clip; by ear, no different from the source |
 | Speed | 38 + M instructions a sample, 41.3 on average with the headers (31.7 M for 768,000 samples): about 2 M instructions a second per channel at 48 kHz |
 | Memory | 83 of the 96 free cells |
-| Encoding | `pace`: 0.25 s for 16 seconds of a channel, about 5 s for the whole soundtrack's; the Python, 30 s |
+| Encoding | `xtrack`: 0.25 s for 16 seconds of a channel, about 5 s for the whole soundtrack's; the Python, 30 s |
 | Stream | 66 cards per 64 samples, plus one to end: 792,001 cards (3.0 MB as text) for 16 seconds of one channel |
 | The whole soundtrack | about 28 M cards for both channels, 56 MB stored as 2 bytes a card, the same as the raw 16-bit audio |
 
@@ -564,7 +564,7 @@ exactly one block: 64 samples. Then the other channel's turn. Each machine stays
 100 cells and its own tape.
 
 ```sh
-ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/pace > song.right.tape
+ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/xtrack > song.right.tape
 $B/dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 ```
 
@@ -574,8 +574,8 @@ channels, left then right, which is what a stereo stream is (and what `-ch_layou
 
 ```mermaid
 flowchart TD
-  A["song.wav"] --> PL["ffmpeg, then pace: the left channel's tape"]
-  A --> PR["ffmpeg, then pace: the right channel's tape"]
+  A["song.wav"] --> PL["ffmpeg, then xtrack: the left channel's tape"]
+  A --> PR["ffmpeg, then xtrack: the right channel's tape"]
   subgraph dub ["dub: one thread, taking turns a block at a time"]
     CL["CARDIAC: decode.cq"]
     CR["CARDIAC: decode.cq"]
