@@ -20,8 +20,8 @@ burn countdown.cqb    # runs it in the fast emulator
 Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per core on a Mac Studio (Apple M5 Ultra).
 
 [What you can do](#what-you-can-do-with-this-sdk) • [Cardigan](#want-an-ide) • [What's in it](#whats-in-this-repo) •
-[Install](#install) • [Walkthrough](#walkthrough) • [CARDIAC in one page](#cardiac-in-one-page) • [carc](#carc) •
-[burn](#burn) • [ekg](#ekg) • [How fast](#how-fast) • [As a library](#as-a-library)
+[Install](#install) • [Walkthrough](#sample-walkthrough) • [CARDIAC in one page](#cardiac-in-one-page) • [carc](#carc) •
+[burn](#burn) • [ekg](#ekg) • [Audio](#audio) • [How fast](#how-fast) • [As a library](#as-a-library)
 
 ## What you can do with this SDK
 
@@ -49,9 +49,9 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per
 | [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc` |
 | [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
-| [`pace`](#pace-lub-and-dub) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
-| [`lub`](#pace-lub-and-dub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
-| [`dub`](#pace-lub-and-dub) | decodes two tapes, left and right, each on a CARDIAC, and outputs them as stereo | `flac -d`, `mpg123` |
+| [`pace`](#pace) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
+| [`lub`](#lub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
+| [`dub`](#dub) | decodes two tapes, left and right, each on a CARDIAC, and outputs them as stereo | `flac -d`, `mpg123` |
 
 The commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
@@ -325,27 +325,105 @@ speed, and `burn` pays nothing for it.
 Exit status is 0 on success, 1 when something failed (a listing with errors; with `--batch`, a command; in a profile,
 a run stopped at the limit), 2 for a usage error.
 
-## pace, lub and dub
+## Audio
 
-Audio a CARDIAC decodes. `pace` codes one channel of raw samples (signed 16-bit, little-endian) as a tape of
-cards; `lub` runs the decoder, [`audio/decode.cq`](audio/decode.cq), on a CARDIAC, and outputs each sample as the
-CARDIAC decodes it:
+`pace`, `lub` and `dub` play sound decoded by CARDIAC. Every prediction, correction and carry of every sample is
+worked out on a CARDIAC; the host's part is cards in and samples out:
+
+1. `pace` codes a channel of audio as a tape of cards, ahead of time.
+2. `lub` (one channel) or `dub` (two, stereo) runs the decoder, [`audio/decode.cq`](audio/decode.cq), on a
+   CARDIAC for each channel, feeding it the tape's cards as its INPs ask for them.
+3. The decoder outputs each sample as two values, the thousands and then the units, because -999 to 999 is too few
+   levels for good sound. `lub` and `dub` put each pair back together into a 16-bit sample and write it out as
+   soon as it is decoded.
+
+From a wav file to the speakers, with `ffmpeg` to read the audio and `ffplay` to play the samples:
 
     ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | pace > song.left.tape
-    lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
-
-`dub` plays stereo: two tapes, each decoded by a CARDIAC of its own. The two take turns on one thread, a block of
-64 samples each, and `dub` writes their samples left then right:
-
     ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | pace > song.right.tape
+
+    lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
     dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 
+The samples are raw, signed 16-bit little-endian, with no header, so the player has to be told what they are:
+`-f s16le`, the rate the audio was coded at (`-ar 48000`), and mono or stereo. To keep them as a wav file instead:
+
+    dub song.left.tape song.right.tape | ffmpeg -f s16le -ar 48000 -ac 2 -i - song.cardiac.wav
+
 The coding is a decimal ADPCM made for CARDIAC's arithmetic: blocks of 64 samples, each with a step of M x 10^K,
-and a three-digit code a sample that corrects a prediction, the line through the last two samples. The decoder
-keeps each sample in two cells and outputs it as two values, the thousands and then the units, because -999 to
-999 is too few levels for good sound; `lub` and `dub` put each pair back together into a 16-bit sample. Every prediction,
-correction and carry is worked out on the CARDIAC: about 41 instructions a sample, 2 million a second for 48 kHz. How it was
-built, and why it has to be this way: [docs/AUDIO.md](docs/AUDIO.md).
+and a three-digit code a sample that corrects a prediction, the line through the last two samples. Decoding takes
+about 41 instructions a sample, 2 million a second for a channel at 48 kHz. How it was built, and why it has to be
+this way: [docs/AUDIO.md](docs/AUDIO.md).
+
+## pace
+
+`pace` codes one channel of audio as a tape for the decoder.
+
+    pace song.left.s16 > song.left.tape    # raw samples from a file
+    ... | pace > song.left.tape            # or from standard input
+
+**Input.** Raw samples, one channel, signed 16-bit little-endian, at any rate (the rate isn't on the tape: tell the
+player). `ffmpeg -af 'pan=mono|c0=c0' -f s16le` makes them from any audio file; `c0=c1` takes the right channel.
+
+**The tape** goes to standard output, a card a line: for each block of 64 samples, its step's K and M, then a card a
+sample, -500 to 499; then -1, the end. For each block `pace` tries every step and keeps the one with the least error,
+each code chosen against the sample the decoder will make (so errors don't pile up). It takes about a quarter of a
+second for 16 seconds of audio.
+
+| | |
+|---|---|
+| `-h`, `--help` | display help and exit |
+| `--version` | output version information and exit |
+
+Exit status is 0 if the tape was written, 1 if the samples can't be read (or are an odd number of bytes) or the tape
+can't be written, 2 for a mistake on the command line.
+
+## lub
+
+`lub` plays one channel: one CARDIAC runs the decoder on the tape, and each sample is written to standard output as
+the CARDIAC decodes it.
+
+    lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
+    pace < song.left.s16 | lub | ffplay ...    # the tape on standard input
+
+**Output.** Raw samples, signed 16-bit little-endian, mono. `lub` won't write them to a terminal: pipe them to a
+player or into a file. When the player stops reading, `lub` stops too, quietly.
+
+**Errors** are said, not played: a tape that ends without its end card, a line that isn't a card (with its line
+number), or two values from the decoder that aren't a 16-bit sample.
+
+| | |
+|---|---|
+| `-h`, `--help` | display help and exit |
+| `--version` | output version information and exit |
+
+Exit status is 0 if the tape was played to its end (or the player stopped reading), 1 if the tape can't be read or
+isn't one the decoder can decode, 2 for a mistake on the command line.
+
+## dub
+
+`dub` plays stereo: two tapes, left and right, each decoded by a CARDIAC of its own.
+
+    dub song.left.tape song.right.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
+    pace < song.left.s16 | dub - song.right.tape | ffplay ...    # one tape may be standard input
+
+**How.** The two CARDIACs take turns on one thread, a block at a time: the left one is given its tape's next 66
+cards (a header and 64 codes) and runs until it asks for more, then the right one. `dub` puts each channel's pairs of
+values back together and writes the samples left, right, left, right: a stereo stream.
+
+**Output.** Raw samples, signed 16-bit little-endian, stereo (left then right). As with `lub`, not to a terminal,
+and a player that stops reading stops `dub` quietly.
+
+**Errors** are `lub`'s, said with which tape, and one more: tapes of different lengths, with which is longer and by
+how many samples, rather than one channel played on alone.
+
+| | |
+|---|---|
+| `-h`, `--help` | display help and exit |
+| `--version` | output version information and exit |
+
+Exit status is 0 if the tapes were played to their end (or the player stopped reading), 1 if a tape can't be read,
+isn't one the decoder can decode, or the two aren't the same length, 2 for a mistake on the command line.
 
 ## How fast
 
