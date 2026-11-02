@@ -1,5 +1,5 @@
 //! Load a CARDIAC program from a listing, make it a tape, and run it: Program No. 1 of the 1968 manual, which reads
-//! two cards and punches their sum.
+//! two cards and outputs their sum.
 use heartburn::listing::{self, Listing};
 use heartburn::tape::Tape;
 
@@ -19,8 +19,8 @@ fn main() -> Result<(), String> {
         return Err("not a memory listing".into());
     };
     let tape = Tape::one(listing::deck(17, &cells)?);
-    let (punched, why, steps) = tape.run(&[2, 3], 1_000)?;
-    println!("{punched:?} ({why:?} after {steps} instructions)");
-    assert_eq!(punched, [5]);
+    let (outputs, why, steps) = tape.run(&[2, 3], 1_000)?;
+    println!("{outputs:?} ({why:?} after {steps} instructions)");
+    assert_eq!(outputs, [5]);
     Ok(())
 }

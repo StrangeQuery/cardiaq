@@ -14,7 +14,7 @@ fn listed(text: &str) -> Vec<i32> {
     deck(3, &cells)
 }
 
-/// Counts 1, 2, 3 into cell 20, punching each: 10 CLA 20, 11 ADD 00, 12 STO 20, 13 OUT 20, 14 SUB 21, 15 TAC 10,
+/// Counts 1, 2, 3 into cell 20, outputting each: 10 CLA 20, 11 ADD 00, 12 STO 20, 13 OUT 20, 14 SUB 21, 15 TAC 10,
 /// 16 HRS 00; 21 holds 3.
 fn counts() -> Vec<i32> {
     deck(
@@ -117,8 +117,8 @@ fn hrs_n_feeds_tape_n() {
     assert_eq!(m.pc(), 2);
 }
 
-/// At any step, the machine a debugger holds is where a plain run stopped at that step: memory, accumulator, cards
-/// punched; and it ends the same, after the same number of instructions.
+/// At any step, the machine a debugger holds is where a plain run stopped at that step: memory, accumulator, values
+/// output; and it ends the same, after the same number of instructions.
 #[test]
 fn state_matches_a_plain_run_at_every_step() {
     let one = listed(include_str!("sortem/sortem-1.cq"));
@@ -128,12 +128,12 @@ fn state_matches_a_plain_run_at_every_step() {
     let total =
         cardiac::run_reading::<false>(&one, &input, &later, &mut std::iter::empty(), &mut vec![], u64::MAX).steps;
     let mut m = Machine::with_tapes(&[one.clone(), later[0].clone()], &input);
-    let mut punched = vec![];
+    let mut outputs = vec![];
     let mut halted = false;
     for n in (0..total).step_by(613).chain([total - 1, total]) {
         // run the machine on to step n, through the stop for tape 2
         while m.steps() < n {
-            match m.run(n - m.steps(), &mut punched) {
+            match m.run(n - m.steps(), &mut outputs) {
                 Event::Budget | Event::Tape(2) => {}
                 Event::Halt if m.steps() == total => halted = true,
                 e => panic!("{e:?} at {}", m.steps()),
@@ -146,7 +146,7 @@ fn state_matches_a_plain_run_at_every_step() {
             (&end.memory, end.acc, end.steps),
             "at step {n}"
         );
-        assert_eq!(punched, plain, "at step {n}");
+        assert_eq!(outputs, plain, "at step {n}");
     }
     let end = cardiac::run_reading::<false>(&one, &input, &later, &mut std::iter::empty(), &mut vec![], u64::MAX);
     assert_eq!((end.stop, halted), (Stop::Halt, true));

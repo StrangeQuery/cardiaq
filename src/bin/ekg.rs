@@ -32,7 +32,7 @@ it) or a deck (loaded by its own loader, as burn loads it), told apart by what i
 reader when it starts (after --, so that negative cards aren't taken for options).
 
 Debugging, commands are read from standard input, a line each (the command help lists them), after those given
-with -x. What the program punches is printed as it is punched, a card a line, each starting `out:`.
+with -x. What the program outputs is printed as it is output, a value a line, each starting `out:`.
 
 Profiling, the program runs to the end and the report goes to standard output: the instructions run, the hottest
 cells, each cell's runs beside the listing, the cells the program wrote (and which of those it ran too: code it
@@ -269,14 +269,14 @@ fn target(w: i32) -> Option<usize> {
     }
 }
 
-/// The program's cards, each on a line of its own as it is punched: `out: N` among ekg's lines, or a bare number
+/// The program's output, a value on a line of its own as it is output: `out: N` among ekg's lines, or a bare number
 /// on standard error in a profile.
 struct Teletype {
     profile: bool,
 }
 
 impl Console for Teletype {
-    fn punch(&mut self, card: i32) {
+    fn output(&mut self, card: i32) {
         if self.profile {
             eprintln!("{card}");
         } else {

@@ -367,7 +367,7 @@ use heartburn::tape::Tape;
 let read = listing::parse("17 034\n18 035\n19 134\n20 235\n21 636\n22 536\n23 900\n")?;
 let Listing::Memory(cells) = read.listing else { return Err("a deck, not a memory listing".into()) };
 let tape = Tape::one(listing::deck(17, &cells)?);
-let (punched, why, steps) = tape.run(&[2, 3], 1_000)?;   // [5], Halt, 34 instructions
+let (outputs, why, steps) = tape.run(&[2, 3], 1_000)?;   // [5], Halt, 34 instructions
 ```
 
 `examples/add.rs` is this, runnable: `cargo run --example add`. `cardiac::run` runs a deck directly, and

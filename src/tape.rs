@@ -305,15 +305,15 @@ impl Tape {
         Ok(deck)
     }
 
-    /// Run the tape on `input`, keeping track of where it ended (`cardiac::run_traced`): the cards punched, and how
+    /// Run the tape on `input`, keeping track of where it ended (`cardiac::run_traced`): the values output, and how
     /// the run ended, for a panic map to say why it panicked (`panics::Map::panic`).
     pub fn run_traced(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Ended), String> {
-        let mut punched = vec![];
-        let end = self.run_traced_into(input, &mut std::iter::empty(), limit, &mut punched)?;
-        Ok((punched, end))
+        let mut outputs = vec![];
+        let end = self.run_traced_into(input, &mut std::iter::empty(), limit, &mut outputs)?;
+        Ok((outputs, end))
     }
 
-    /// `run_traced`, each card punched going to `out` as it is punched, and once `input` is read, each further
+    /// `run_traced`, each value output going to `out` as it is output, and once `input` is read, each further
     /// card the next of `more`, asked for when the INP that reads it runs.
     pub fn run_traced_into(
         &self,
@@ -333,15 +333,15 @@ impl Tape {
         ))
     }
 
-    /// Run the tape on `input` and return the cards punched, why it stopped, and how many instructions it ran
+    /// Run the tape on `input` and return the values output, why it stopped, and how many instructions it ran
     /// (the loader's among them).
     pub fn run(&self, input: &[i32], limit: u64) -> Result<(Vec<i32>, crate::cardiac::Stop, u64), String> {
-        let mut punched = vec![];
-        let (why, steps) = self.run_into(input, &mut std::iter::empty(), limit, &mut punched)?;
-        Ok((punched, why, steps))
+        let mut outputs = vec![];
+        let (why, steps) = self.run_into(input, &mut std::iter::empty(), limit, &mut outputs)?;
+        Ok((outputs, why, steps))
     }
 
-    /// `run`, each card punched going to `out` as it is punched, and once `input` is read, each further card the
+    /// `run`, each value output going to `out` as it is output, and once `input` is read, each further card the
     /// next of `more`, asked for when the INP that reads it runs.
     pub fn run_into(
         &self,
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(t.slots, vec![key(false)]);
     }
 
-    /// HRS 1 feeds tape 1 again, and phases go round: 1 → 2 → 1 → 2, each phase reading a card and punching it
+    /// HRS 1 feeds tape 1 again, and phases go round: 1 → 2 → 1 → 2, each phase reading a card and outputting it
     /// plus its phase's number, until the input runs out.
     #[test]
     fn any_tape_in_any_order_as_often_as_asked() {
@@ -465,7 +465,7 @@ mod tests {
     }
 
     /// Past the input in the reader, each card comes from `more` when an INP asks for it, never ahead: by then the
-    /// program has punched everything before it (so it can be the answer to what it punched), and its end is the
+    /// program has output everything before it (so it can be the answer to what it output), and its end is the
     /// reader's.
     #[test]
     fn more_cards_are_asked_for_when_inp_runs() {
@@ -473,22 +473,22 @@ mod tests {
         use std::rc::Rc;
         struct Shared(Rc<RefCell<Vec<i32>>>);
         impl Console for Shared {
-            fn punch(&mut self, card: i32) {
+            fn output(&mut self, card: i32) {
                 self.0.borrow_mut().push(card)
             }
         }
-        let punched = Rc::new(RefCell::new(vec![]));
-        let seen = punched.clone();
+        let outputs = Rc::new(RefCell::new(vec![]));
+        let seen = outputs.clone();
         let mut asked: Vec<Vec<i32>> = vec![];
-        // each card is the last card punched, plus 10
+        // each card is the last value output, plus 10
         let mut more = std::iter::from_fn(|| {
             asked.push(seen.borrow().clone());
             (asked.len() <= 2).then(|| seen.borrow().last().unwrap() + 10)
         });
         let t = tape_of(PRINTS, vec![]);
-        let (why, _) = t.run_into(&[5], &mut more, 1000, &mut Shared(punched.clone())).unwrap();
+        let (why, _) = t.run_into(&[5], &mut more, 1000, &mut Shared(outputs.clone())).unwrap();
         assert_eq!(why, Stop::OutOfCards);
-        assert_eq!(*punched.borrow(), vec![0, 0, 5, 15, 25]);
+        assert_eq!(*outputs.borrow(), vec![0, 0, 5, 15, 25]);
         assert_eq!(asked, vec![vec![0, 0, 5], vec![0, 0, 5, 15], vec![0, 0, 5, 15, 25]]);
     }
 

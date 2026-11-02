@@ -21,7 +21,7 @@ Usage:
   heartburn-tools run NAME.cardimg [-- INPUT...]
       Run a deck: plain cards, one a line. A program in phases is fed its tapes as it asks for them:
       when it stops with the bug on n (HRS n), NAME.n.cqb beside it goes in the reader and it starts again at 00.
-      Each card it punches is printed on a line of its own as it is punched. The input is the numbers after --, or
+      Each value it outputs is printed on a line of its own as it is output. The input is the numbers after --, or
       else standard input, each card read when an INP asks for it. A resource slot (NAME.cqb.meta) is filled from
       resources/NAME beside it. How it stopped, and after how many instructions, goes to standard error.
   heartburn-tools run LISTING... [--start NN] [-- INPUT...]
@@ -54,11 +54,11 @@ fn bad_usage(why: &str) -> ! {
     std::process::exit(2)
 }
 
-/// The teletype: each card on standard output as it is punched.
+/// The teletype: each value on standard output as it is output.
 struct Teletype(std::io::StdoutLock<'static>);
 
 impl Console for Teletype {
-    fn punch(&mut self, card: i32) {
+    fn output(&mut self, card: i32) {
         let _ = writeln!(self.0, "{card}");
         let _ = self.0.flush();
     }

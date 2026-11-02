@@ -5,7 +5,7 @@ use std::process::Command;
 use heartburn::cardiac::{self, Stop};
 use heartburn::listing::{self, Listing};
 
-/// `heartburn-tools run ARGS`: what it punched, one card a line, and what it said on standard error.
+/// `heartburn-tools run ARGS`: what it output, one value a line, and what it said on standard error.
 fn run(args: &[&str]) -> (Vec<i32>, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_heartburn-tools"))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -15,22 +15,22 @@ fn run(args: &[&str]) -> (Vec<i32>, String) {
         .unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(out.status.success(), "heartburn-tools run {args:?}: {stderr}");
-    let punched = String::from_utf8(out.stdout)
+    let outputs = String::from_utf8(out.stdout)
         .unwrap()
         .lines()
         .map(|l| l.parse().unwrap())
         .collect();
-    (punched, stderr)
+    (outputs, stderr)
 }
 
-fn punched(args: &[&str]) -> Vec<i32> {
+fn outputs(args: &[&str]) -> Vec<i32> {
     run(args).0
 }
 
 #[test]
 fn no_1_adds() {
     assert_eq!(
-        punched(&["tests/manual/add.cq", "--start", "17", "--", "123", "456"]),
+        outputs(&["tests/manual/add.cq", "--start", "17", "--", "123", "456"]),
         [579]
     );
 }
@@ -38,7 +38,7 @@ fn no_1_adds() {
 #[test]
 fn no_2_counts_to_five() {
     assert_eq!(
-        punched(&["tests/manual/counting.cq", "--start", "20"]),
+        outputs(&["tests/manual/counting.cq", "--start", "20"]),
         [1, 2, 3, 4, 5]
     );
 }
@@ -67,7 +67,7 @@ fn no_3_counts_on() {
 #[test]
 fn no_4_counts_down() {
     assert_eq!(
-        punched(&["tests/manual/countdown.cq", "--start", "20"]),
+        outputs(&["tests/manual/countdown.cq", "--start", "20"]),
         [-3, -2, -1, 0]
     );
 }
@@ -75,7 +75,7 @@ fn no_4_counts_down() {
 #[test]
 fn no_5_multiplies() {
     assert_eq!(
-        punched(&["tests/manual/multiply.cq", "--start", "07", "--", "25", "5"]),
+        outputs(&["tests/manual/multiply.cq", "--start", "07", "--", "25", "5"]),
         [125]
     );
 }
@@ -83,7 +83,7 @@ fn no_5_multiplies() {
 #[test]
 fn no_6_reverses() {
     assert_eq!(
-        punched(&["tests/manual/reverse.cq", "--start", "15", "--", "269"]),
+        outputs(&["tests/manual/reverse.cq", "--start", "15", "--", "269"]),
         [962]
     );
 }
@@ -92,7 +92,7 @@ fn no_6_reverses() {
 fn no_7_loads_itself_from_cards() {
     // the BLANK card stops the loader; the operator starts the program at 10
     assert_eq!(
-        punched(&[
+        outputs(&[
             "tests/manual/bootstrap-addition.cq",
             "--start",
             "10",
@@ -123,13 +123,13 @@ fn no_8_adds_in_double_precision() {
 
 #[test]
 fn no_9_plays_nim() {
-    assert_eq!(punched(&["tests/manual/nim.cq", "--start", "01"]), [19]);
+    assert_eq!(outputs(&["tests/manual/nim.cq", "--start", "01"]), [19]);
     assert_eq!(
-        punched(&["tests/manual/nim.cq", "--start", "00", "--", "517"]),
+        outputs(&["tests/manual/nim.cq", "--start", "00", "--", "517"]),
         [34]
     );
     assert_eq!(
-        punched(&["tests/manual/nim.cq", "--start", "00", "--", "513"]),
+        outputs(&["tests/manual/nim.cq", "--start", "00", "--", "513"]),
         [30]
     );
 }
@@ -147,7 +147,7 @@ fn no_10_plays_better_nim() {
     ]);
     assert_eq!((p, said.contains("warning")), (vec![12, 3, 9], false));
     assert_eq!(
-        punched(&[
+        outputs(&[
             "tests/manual/improved-nim.cq",
             "tests/manual/pile-15.cq",
             "--start",

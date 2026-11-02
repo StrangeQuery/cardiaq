@@ -25,7 +25,7 @@ Run a CARDIAC deck.
 A deck is cards, one a line (lines starting with # are comments), starting with the loader's 002 and 800,
 whatever the file is called; carc makes one from a listing. With DECK -, the deck is read from standard input.
 The program's input is the INPUT numbers after DECK, if there are any or a --, or else standard input, each card
-read when an INP asks for it. Each card it punches is printed on a line of its own as it is punched. How it
+read when an INP asks for it. Each value it outputs is printed on a line of its own as it is output. How it
 stopped, and after how many instructions, goes to standard error.
 A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.cqb beside it
 goes in the reader and it starts again at 00.
@@ -46,12 +46,12 @@ fn die(why: impl std::fmt::Display) -> ! {
     getopt::die(PROG, why)
 }
 
-/// The teletype: each card on standard output as it is punched. When no one reads it any more (`burn deck | head`)
+/// The teletype: each value on standard output as it is output. When no one reads it any more (`burn deck | head`)
 /// the program is stopped, as a C program is by SIGPIPE, rather than left running to the limit.
 struct Teletype(std::io::StdoutLock<'static>);
 
 impl Console for Teletype {
-    fn punch(&mut self, card: i32) {
+    fn output(&mut self, card: i32) {
         if let Err(e) = writeln!(self.0, "{card}").and_then(|_| self.0.flush()) {
             if e.kind() == std::io::ErrorKind::BrokenPipe {
                 std::process::exit(0)
@@ -119,13 +119,13 @@ fn bench() {
     let mut best = f64::MAX;
     let mut steps = 0;
     for _ in 0..5 {
-        let mut punched = vec![];
+        let mut outputs = vec![];
         let t = Instant::now();
-        let (stop, n) = cardiac::run(&[&deck], &mut punched, LIMIT);
+        let (stop, n) = cardiac::run(&[&deck], &mut outputs, LIMIT);
         let dt = t.elapsed().as_secs_f64();
         assert!(
-            stop == Stop::Halt && punched == [-1],
-            "the benchmark went wrong: {stop:?}, punched {punched:?}"
+            stop == Stop::Halt && outputs == [-1],
+            "the benchmark went wrong: {stop:?}, output {outputs:?}"
         );
         best = best.min(dt);
         steps = n;
