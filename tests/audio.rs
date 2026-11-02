@@ -127,12 +127,25 @@ fn dub_reads_only_one_track_from_standard_input() {
     assert!(String::from_utf8_lossy(&played.stderr).starts_with("dub: only one track can be standard input\n"));
 }
 
-/// The example track decodes to its 128 samples, the first of them 6,640, as audio/README.md says.
+/// The example track decodes to its 128 samples. Its first cards and first three samples are the ones
+/// docs/AUDIO.md works through cell by cell, "The first three samples, cell by cell": if the track changes, so must
+/// that table.
 #[test]
 fn the_example_track_plays() {
     let track = std::fs::read("audio/blue-danube.track").unwrap();
+    let cards: Vec<i32> = String::from_utf8(track.clone())
+        .unwrap()
+        .split_whitespace()
+        .map(|c| c.parse().unwrap())
+        .collect();
+    assert_eq!(cards[..5], [1, 2, 332, -273, -52]);
     let played = run(env!("CARGO_BIN_EXE_lub"), &[], &track);
     assert!(played.status.success(), "{}", String::from_utf8_lossy(&played.stderr));
     assert_eq!(played.stdout.len(), 128 * 2);
-    assert_eq!(i16::from_le_bytes([played.stdout[0], played.stdout[1]]), 6640);
+    let samples: Vec<i16> = played
+        .stdout
+        .chunks(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    assert_eq!(samples[..3], [6640, 7820, 7960]);
 }

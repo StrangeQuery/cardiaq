@@ -243,26 +243,34 @@ flowchart TD
 
 ### The first three samples, cell by cell
 
-The left channel of the test clip starts with the cards `0 6 332 -458 143`. That is a header with K = 0 and M = 6
-(a step size of 6), followed by the first three codes. The decoder starts with every history cell at 0.
+This section follows the example track, [`audio/blue-danube.track`](../audio/blue-danube.track), so you can step
+through it in `ekg` or Cardigan and check each number against this table. ([audio/README.md](../audio/README.md)
+says how.) The track starts with the cards `1 2 332 -273 -52`. That is a header with K = 1 and M = 2, which gives a
+step size of 2 x 10 = 20, followed by the first three codes. Because K is 1, the header turns the two shift
+instructions into `SFT 02`, which extracts the thousands, and `SFT 21`, which extracts the units. The decoder starts
+with every history cell at 0.
 
 | | Sample 0 | Sample 1 | Sample 2 |
 |---|---|---|---|
-| The card C | 332 | -458 | 143 |
-| C x M | 1,992 | -2,748 | 858 |
-| Thousands (SFT 03) | 1 | -2 | 0 |
-| Units (STO keeps the last three digits; then SFT 11) | 992 | -748 | 858 |
-| History before: H1, L1 and H2, L2 | 0, 0 and 0, 0 | 1, 992 and 0, 0 | 1, 236 and 1, 992 |
-| Units sum: 2000 + 2 L1 - L2 + units | 2,992 | 3,236 | 2,338 |
-| New L, and the carry | 992, carry 2 | 236, carry 3 | 338, carry 2 |
-| New H: carry + 2 H1 - H2 + thousands - 2 | 2 + 0 - 0 + 1 - 2 = 1 | 3 + 2 - 0 - 2 - 2 = 1 | 2 + 2 - 1 + 0 - 2 = 1 |
-| OUT | 1, then 992 | 1, then 236 | 1, then 338 |
-| The sample | 1,992 | 1,236 | 1,338 |
-| Check: prediction + C x step | 0 + 1,992 | 3,984 - 2,748 | 480 + 858 |
+| The card C (cell `c`) | 332 | -273 | -52 |
+| C x M | 664 | -546 | -104 |
+| Stored by STO, the last three digits (cell `u`) | 664 | -546 | -104 |
+| Thousands: `SFT 02` of C x M (cell `hi`) | 6 | -5 | -1 |
+| Units: `SFT 21` of the stored value (cell `lo`) | 640 | -460 | -40 |
+| History before: H1, L1 and H2, L2 | 0, 0 and 0, 0 | 6, 640 and 0, 0 | 7, 820 and 6, 640 |
+| Units sum: 2000 + 2 L1 - L2 + units (the accumulator at cell 44) | 2,640 | 2,820 | 2,960 |
+| New L, and the carry | 640, carry 2 | 820, carry 2 | 960, carry 2 |
+| New H: carry + 2 H1 - H2 + thousands - 2 | 2 + 0 - 0 + 6 - 2 = 6 | 2 + 12 - 0 - 5 - 2 = 7 | 2 + 14 - 6 - 1 - 2 = 7 |
+| OUT | 6, then 640 | 7, then 820 | 7, then 960 |
+| The sample | 6,640 | 7,820 | 7,960 |
+| Check: prediction + C x step | 0 + 6,640 | 13,280 - 5,460 | 9,000 - 1,040 |
 
-The prediction for sample 1 is 2 x 1,992 - 0 = 3,984, and the prediction for sample 2 is 2 x 1,236 - 1,992 = 480.
+The prediction for sample 1 is 2 x 6,640 - 0 = 13,280, and the prediction for sample 2 is 2 x 7,820 - 6,640 = 9,000.
 The decoder never forms those five-digit numbers. It works in thousands and units the whole time, and the carry
 joins the two.
+
+To see these numbers on the CARDIAC, stop at cell 44 to read the units sum in the accumulator, and at cell 59, the
+first OUT, to read the cells `c`, `u`, `hi`, `lo`, `h1`, `l1`, `h2` and `l2`.
 
 ### The decoder listing
 
