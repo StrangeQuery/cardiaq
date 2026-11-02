@@ -1,94 +1,110 @@
 # Playing audio with CARDIAC math
 
-The goal: play CD-quality sound (48 kHz, 16-bit) where every sample is worked out by a CARDIAC. The host may deal
-cards to the machine and send the numbers it outputs to the speakers; it may not do the arithmetic. The test
-material is a 4:45 stereo soundtrack: music, voices, and quiet room noise under the voices, which is the hardest
-part to code well.
+Our goal was to play CD-quality sound (48,000 samples per second, 16 bits per sample) in which every sample is
+calculated by a CARDIAC. The host computer is allowed to feed cards to the machine and to send the numbers it
+outputs to the speakers. It is not allowed to do the arithmetic.
 
-Part 1 builds a mono player: a codec CARDIAC can decode, the decoder as a CARDIAC listing, an encoder, the
-commands that play a channel as it is decoded, and then `lub`, the mono player as a program. Part 2 makes it
-stereo, ending with `dub`.
+We tested everything on a stereo soundtrack four minutes and 45 seconds long. It has music, voices, and quiet room
+noise under the voices. The quiet passages turned out to be the hardest part to get right.
 
-In this repository: the decoder is [`audio/decode.cq`](../audio/decode.cq); the coding is `heartburn::audio`
-([`src/audio.rs`](../src/audio.rs)); `xtrack` codes a channel, `lub` plays one and `dub` plays two
-([`src/bin/`](../src/bin/)). [`encode.py`](encode.py), beside this page, is the encoder as it was first written,
-the reference the Rust one was checked against.
+Part 1 builds a mono player. It covers the coding scheme, the decoder written as a CARDIAC program, the encoder,
+the shell pipe that first played a channel, and finally `lub`, the mono player as a program. Part 2 adds stereo and
+ends with `dub`.
 
-## Part 1: a mono player
+Everything described here is in this repository:
+
+- The decoder is the CARDIAC program [`audio/decode.cq`](../audio/decode.cq).
+- The encoder and the decoder's assembly live in the library module `heartburn::audio`
+  ([`src/audio.rs`](../src/audio.rs)).
+- `xtrack` encodes a channel, `lub` plays one channel, and `dub` plays two ([`src/bin/`](../src/bin/)).
+- [`encode.py`](encode.py), next to this page, is the encoder as we first wrote it, in Python. We used it as the
+  reference when we wrote the Rust version.
+
+## Part 1: A mono player
 
 ### What CARDIAC gives us
 
-- 100 cells of three digits and a sign (-999..999). Cell 00 holds 001, the loader uses 01 and 02, and every JMP
-  writes cell 99, so a program has cells 03 to 98: 96 cells.
-- An accumulator of four digits and a sign (-9999..9999).
-- ADD, SUB, CLA and STO; TAC (jump if negative); JMP; INP and OUT; HRS. No multiply and no divide.
-- SFT, which shifts the accumulator's magnitude left, then right, by whole decimal digits, keeping the sign.
-- STO keeps the last three digits of the accumulator, with its sign: 2,040 stores as 40, and -2,040 as -40.
+- **Memory.** 100 cells, each holding three digits and a sign (-999 to 999). Cell 00 always holds 001, the
+  loader uses cells 01 and 02, and every JMP writes to cell 99. That leaves a program cells 03 to 98, which is 96
+  cells.
+- **The accumulator.** Four digits and a sign (-9999 to 9999).
+- **Instructions.** ADD, SUB, CLA, STO, TAC (jump if negative), JMP, INP, OUT and HRS. There is no multiply and
+  no divide.
+- **SFT** shifts the accumulator's digits left and then right by whole decimal places. It keeps the sign.
+- **STO** stores only the last three digits of the accumulator, with its sign. For example, 2,040 is stored as
+  40, and -2,040 as -40.
 
-### The shape of it: tracks in, samples out
+### The overall design: tracks in, samples out
 
-Everything here follows one path:
+Everything we built follows the same path:
 
-1. **Audio goes in.** The host reads the audio file.
-2. **The host writes the tracks**: the encoder turns each channel into a track, a stream of cards, ahead of time.
-3. **The CARDIACs output values**: each decodes its track, one card at a time, and outputs two values a sample.
-4. **The host combines the values** into an audio stream and writes it out to a player or a file.
+1. The host reads the audio file.
+2. The host encodes each channel ahead of time into a **track**. A track is a file of CARDIAC cards, one per line.
+3. A CARDIAC loads the decoder. Its INP instructions then read the track's cards one at a time, and it outputs
+   two values for every sample.
+4. The host combines those values into an audio stream and sends it to a player or to a file.
 
-It pretty much has to be this way, because a CARDIAC value isn't enough levels for good sound. A value from
--999 to 999 is 1,999 levels, about 11 bits. CD audio has 65,536 (16 bits). One value a sample would leave quiet
-passages, a voice over room noise say, only a handful of levels, with hiss under all of them. So every sample
-leaves the CARDIAC as more than one value, and something has to put them back together into the sound card's
-format. That is the host's last step: a change of format, like printing a number in decimal, not part of the
-decoding. Every prediction, every correction and every carry happens on the CARDIAC.
+It has to work this way because a single CARDIAC value doesn't have enough levels for good sound. A value from
+-999 to 999 has 1,999 possible levels, which is about 11 bits. CD audio has 65,536 levels (16 bits). With only one
+value per sample, quiet passages like a voice over room noise would get just a handful of levels, and you would
+hear hiss under every one of them. So each sample has to leave the CARDIAC as more than one value, and something
+has to put the values back together in the format the sound card expects. That is the host's last step. It is a
+change of format, like printing a number in decimal. All of the decoding (every prediction, every correction and
+every carry) happens on the CARDIAC.
 
 ```mermaid
 flowchart TD
-  A["audio in"] --> H1["host: the encoder writes the tracks"]
-  H1 --> T1["tracks: a card a code, a header a block"]
-  T1 --> C["CARDIACs: decode.cq, one per channel"]
-  C --> T2["output: two values a sample, the thousands and the units"]
-  T2 --> H2["host: combines the values into 16-bit samples, the channels interleaved"]
+  A["audio in"] --> H1["host: the encoder writes a track for each channel"]
+  H1 --> T1["tracks: one card per code, and a header for each block"]
+  T1 --> C["CARDIACs running decode.cq, one per channel"]
+  C --> T2["output: two values per sample, the thousands and the units"]
+  T2 --> H2["host: combines the values into 16-bit samples and interleaves the channels"]
   H2 --> O["audio out: a player, or a file"]
 ```
 
-### Why not MP3 or AAC
+### Why not MP3 or AAC?
 
-The compressed formats the soundtrack came in are built on transforms full of multiplication. CARDIAC would
-have to grind through every multiply in loops of ADDs, which is a couple of cores' worth of work, and a big
-program to write. Small files aren't the goal anyway. The goal is a decoder simple enough to be exact on CARDIAC.
+The soundtrack's compressed formats are built on mathematical transforms that are full of multiplications.
+CARDIAC would have to do every one of those multiplications as a loop of ADDs. That would take a couple of
+processor cores' worth of work, and it would be a large program to write. Small files aren't our goal anyway. We
+wanted a decoder simple enough to run exactly on CARDIAC.
 
 ### ADPCM: predict, then correct
 
-ADPCM (adaptive differential pulse-code modulation) predicts each sample from the ones before it and sends only
-the correction, as a small code times a step size. Decoding is a prediction and an add. The hard part, choosing
-each code, is the encoder's, and the encoder runs once, ahead of time, on any computer. That split suits CARDIAC.
+ADPCM (adaptive differential pulse-code modulation) predicts each sample from the samples before it. Instead of the
+sample itself, it sends only a correction: a small code, multiplied by a step size. To decode a sample you make the
+prediction and add the correction. The hard part is choosing each code, and that is the encoder's job. The encoder
+runs once, ahead of time, on an ordinary computer. That division of labour suits CARDIAC well.
 
-### How many digits a sample
+### How many digits per sample?
 
-A card holds three digits. We tried two ends:
+A card holds three digits. We tried both extremes:
 
-- **1 digit a sample**, three samples a card: ten levels, about 3.3 bits, like the 4-bit ADPCM of 90s games.
-- **3 digits a sample**, one sample a card: a code from -500 to 499.
+- **One digit per sample**, so three samples fit on each card. That gives ten levels, about 3.3 bits, which is
+  similar to the 4-bit ADPCM used in 90s video games.
+- **Three digits per sample**, so one sample per card. The code runs from -500 to 499.
 
-Files aren't the goal, so the deck's size didn't decide it. On the 16-second test clip (107-123 s, a voice over
-room noise), 1 digit came out at 31 dB signal-to-noise, with audible hiss under the voice. 3 digits came out at
-69.7 dB and couldn't be told from the source by ear. We use 3.
+File size wasn't the goal, so the number of cards didn't decide it. On our 16-second test clip (from 107 s to 123
+s, a voice over room noise), one digit per sample reached 31 dB signal-to-noise, and you could hear hiss under the
+voice. Three digits reached 69.7 dB, and by ear it couldn't be told apart from the source. We use three digits.
 
-### Adapting the step
+### Adapting the step size
 
-The first version adapted the step size as it went, from the codes themselves, the way IMA ADPCM does: a big code
-made the step grow, a small one made it shrink. It did badly on this soundtrack, which is mixed loud and limited:
+Our first version adjusted the step size as it went, based on the codes themselves, the way IMA ADPCM does. A large
+code made the step grow and a small one made it shrink. That worked badly on this soundtrack, which is mixed loud
+and heavily limited:
 
 | Clip | 1 digit | 3 digits |
 |---|---|---|
 | 16 s from 107 s, step adapted from the codes | 23.6 dB | 29.0 dB |
 
-At 3 digits, 50,593 of the clip's 768,000 codes hit the ends of their range: the step couldn't grow fast enough to
-follow the music (slope overload). Faster-rising rules helped 3 digits (up to 49.1 dB on 8 seconds) and hurt
-1 digit (down to 19.0 dB).
+With three digits, 50,593 of the clip's 768,000 codes hit the ends of their range. The step size couldn't grow
+fast enough to keep up with the music (this is called slope overload). Rules that made the step grow faster helped
+three digits (up to 49.1 dB on 8 seconds) but made one digit worse (down to 19.0 dB).
 
-The fix is the one the PlayStation's and the SNES's sound chips use. The encoder chooses the step for each short
-block and sends it as a header. On CARDIAC that's just a few more cards. On 4 seconds from 107 s:
+The fix is the one used by the sound chips in the PlayStation and the SNES. The encoder chooses the step size for
+each short block of samples and sends it as a header at the start of the block. On CARDIAC that costs only a few
+extra cards. These are the results for 4 seconds starting at 107 s:
 
 | Block | 1 digit | 3 digits |
 |---|---|---|
@@ -97,33 +113,37 @@ block and sends it as a header. On CARDIAC that's just a few more cards. On 4 se
 | 32 samples | | 71.1 dB |
 | 64 samples | | 70.3 dB |
 
-We use blocks of 64 samples: two header cards per 64 code cards.
+We use blocks of 64 samples, so there are two header cards for every 64 code cards.
 
-### Steps CARDIAC can multiply by
+### Step sizes CARDIAC can multiply by
 
-Every sample needs C times the step, and CARDIAC can't multiply. So the step is M x 10^K, with M from 1 to 9
-and K from 0 to 3:
+Every sample needs the code C multiplied by the step size, and CARDIAC can't multiply. So we restricted the step
+size to M x 10^K, where M is from 1 to 9 and K is from 0 to 3:
 
-- **x M** is a row of nine `ADD c` instructions. The decoder jumps into the row at the point that leaves M of them.
-- **x 10^K** is a shift of K digits, which is one SFT.
+- **Multiplying by M** uses a row of nine `ADD c` instructions. The decoder jumps into the row at the point that
+  leaves exactly M of them to run.
+- **Multiplying by 10^K** is a shift of K digits, which is a single SFT instruction.
 
-K stops at 3 because the shift that finds the thousands is `SFT 0(3-K)`. A first try used M of 1, 2 or 5 only;
-any M from 1 to 9 costs nothing more, since the row is there anyway, and gives the encoder finer steps.
+K stops at 3 because the shift that extracts the thousands is `SFT 0(3-K)`. Our first attempt allowed only 1, 2
+or 5 for M. Allowing any value from 1 to 9 costs nothing extra, because the row of ADDs is there anyway, and it
+gives the encoder finer steps to choose from.
 
-C x M reaches 499 x 9 = 4,491, which still fits the accumulator.
+The largest product, C x M, is 499 x 9 = 4,491. That still fits in the accumulator.
 
 ### The prediction, and the 106-cell problem
 
-Each block could choose between two predictions:
+We considered letting each block choose between two predictions:
 
-- **the last sample**, or
-- **the line through the last two**: twice the last, less the one before. That's only adds.
+- **the previous sample**, or
+- **a straight line through the previous two samples**: twice the previous sample, minus the one before it. This
+  needs only additions and a subtraction.
 
-The decoder that let each block choose came to about 106 cells, against 96 free. The choice would be a header
-card that rewrites four more instructions (an ADD or SUB of the history, or of a zero), and the code to build them
-from it. So we measured what the choice was worth, one second at each of eight points in the soundtrack:
+A decoder that let each block choose came to about 106 cells, and only 96 are free. The choice would need another
+header card, which would rewrite four more instructions (an ADD or SUB of the sample history, or of a zero), plus
+the code to build those instructions. So we measured what the choice was actually worth, using one second at each
+of eight points in the soundtrack:
 
-| Clip (s) | Either, per block | Line only | Last sample only |
+| Clip (s) | Either, chosen per block | Line only | Previous sample only |
 |---|---|---|---|
 | 20 | 60.2 | 59.6 | 60.1 |
 | 60 | 70.9 | 68.5 | 68.6 |
@@ -134,84 +154,87 @@ from it. So we measured what the choice was worth, one second at each of eight p
 | 230 | 105.9 | 105.9 | 105.9 |
 | 270 | 70.0 | 64.8 | 69.0 |
 
-(signal-to-noise in dB)
+(signal-to-noise, in dB)
 
-The line alone costs at most 5 dB and never falls below 59.6 dB. That compromise fits in memory, so the line is
-the only prediction, and the header is two cards: K and M.
+Using the straight line on its own costs at most 5 dB, and it never drops below 59.6 dB. That compromise fits in
+memory. So the straight line is the only prediction, and each block's header is just two cards, K and M.
 
-Here is the line at work on twelve real samples. Each hollow circle is where the line through the two samples
-before it lands; each arrow is the correction, C times the block's step, that takes the prediction to the sample.
-This block is noisy, so the corrections are large. On smooth music the circles sit nearly on the samples, and the
-codes are small.
+The figure below shows the prediction at work on twelve real samples. Each hollow circle is where the line through
+the two previous samples lands. Each arrow is the correction, C times the block's step size, that moves the
+prediction to the actual sample. This block is noisy, so the corrections are large. On smooth music the circles
+sit almost on top of the samples, and the codes are small.
 
 ![The decoder's prediction and correction on samples 8-19 of the test clip's left channel](figures/prediction.svg)
 
-### A 16-bit sample in three-digit cells
+### Fitting a 16-bit sample into three-digit cells
 
-A sample runs from -32,768 to 32,767, which fits neither a cell nor the accumulator. The decoder keeps each sample
-in two cells: H, the thousands, and L, the units from 0 to 999, so the sample is H x 1000 + L. -12,345 is H = -13,
-L = 655.
+A 16-bit sample runs from -32,768 to 32,767. That fits neither in a cell nor in the accumulator. So the decoder
+keeps each sample in two cells: H, the thousands, and L, the units from 0 to 999. The sample is H x 1000 + L. For
+example, -12,345 is stored as H = -13 and L = 655.
 
-The correction C x M x 10^K is split the same way, into a thousands part and a units part, by two SFTs that keep
-its sign. The new units are summed over a bias of 2000 so the sum can't go negative:
+The correction C x M x 10^K is split the same way, into a thousands part and a units part, by two SFT
+instructions. Both parts keep the correction's sign. To keep the sum of the units from going negative, the decoder
+adds a bias of 2000:
 
-    sum = 2000 + 2 L1 - L2 + units      (2 to 4,997)
-    L   = the sum's last three digits    (STO keeps them)
-    H   = SFT 03 of the sum (the carry, 0 to 4) + 2 H1 - H2 + thousands - 2
+    sum = 2000 + 2 L1 - L2 + units       (between 2 and 4,997)
+    L   = the last three digits of sum    (STO keeps exactly these)
+    H   = (sum shifted right three digits, the carry from 0 to 4) + 2 H1 - H2 + thousands - 2
 
-The bias makes the carry come out of a plain shift, and the -2 takes the bias back out of the thousands.
+Here L1 and H1 are the previous sample, and L2 and H2 are the one before it. The bias means the carry comes out of
+a plain shift, and the -2 at the end removes the bias again.
 
-### The header writes the program
+### The block header rewrites the program
 
-Each block's header is two numbers, K and M, and the decoder turns them into three of its own instructions:
+Each block's header is two numbers, K and M. The decoder uses them to write three of its own instructions:
 
 | Cell | Becomes | Built as |
 |---|---|---|
-| `mul` | JMP into the row of ADDs, M from its end | `JMP x1`, less M, plus 1 |
-| `shi` | SFT 0(3-K), the thousands | 403 - K |
-| `slo` | SFT (K+1)1, the units | 411 + 10 K |
+| `mul` | a JMP into the row of ADDs, M instructions from its end | `JMP x1`, minus M, plus 1 |
+| `shi` | SFT 0(3-K), which extracts the thousands | 403 - K |
+| `slo` | SFT (K+1)1, which extracts the units | 411 + 10 K |
 
-So the stream stays plain numbers, not instructions that depend on where the decoder keeps things. A K below zero
-ends the stream.
+That way the track contains only plain numbers, not instructions that depend on where the decoder keeps things in
+memory. A K below zero marks the end of the track.
 
-### What bit: a product too big for a cell
+### A bug: a product too big for a cell
 
-The first decoder stored C x M in a cell, then shifted the thousands and the units out of it. A cell holds three
-digits and C x M can have four, so the thousands were lost. The first sample of the test came out 40 instead of
-2,040. The comparison against the encoder's model caught it on sample 0, and `ekg` found it: the thousands went to
-0 after `SFT 03`, because the cell it shifted held 040.
+The first version of the decoder stored C x M in a cell and then shifted the thousands and the units out of that
+cell. But a cell holds only three digits, and C x M can have four, so the thousands were lost. The very first
+sample of the test came out as 40 instead of 2,040. Comparing against the encoder's expected output caught it on
+sample 0, and stepping through in `ekg` showed why: after `SFT 03`, the thousands were 0, because the cell being
+shifted held 040.
 
 The fix costs nothing. The units depend only on the last three digits, which is exactly what STO keeps. So the
-decoder stores C x M (keeping its last three digits), shifts the thousands out of the accumulator, which still
-holds all four, then reloads the stored digits for the units.
+decoder stores C x M (keeping its last three digits), shifts the thousands out of the accumulator, which still holds
+all four digits, and then reloads the stored digits to get the units.
 
 ### What the decoder does for each sample
 
-| Cells | Instructions | What |
+| Cells | Instructions | What happens |
 |---|---|---|
-| 19-21 | 3 | INP the code C, clear the accumulator, jump into the row |
-| 22-30 | M | C x M |
-| 31-36 | 6 | x 10^K, split into thousands and units |
+| 19-21 | 3 | INP reads the code C, the accumulator is cleared, and the program jumps into the row of ADDs |
+| 22-30 | M | the row of ADDs computes C x M |
+| 31-36 | 6 | multiply by 10^K and split into thousands and units |
 | 37-43 | 7 | the units: 2000 + 2 L1 - L2 + units; STO keeps the new L |
 | 44-50 | 7 | the thousands: carry + 2 H1 - H2 + thousands - 2 |
-| 51-58 | 8 | the last sample becomes the one before |
-| 59-60 | 2 | OUT the thousands, OUT the units |
-| 61-65 | 5 | count down the block; at its end, read the next header |
+| 51-58 | 8 | the previous sample becomes the one before it, and the new sample becomes the previous one |
+| 59-60 | 2 | OUT the thousands, then OUT the units |
+| 61-65 | 5 | count down the block; at the end of the block, go back and read the next header |
 
-That's 38 + M instructions a sample, plus 16 for each block's header.
+That is 38 + M instructions per sample, plus 16 instructions for each block's header.
 
 ```mermaid
 flowchart TD
   K["INP K"] --> E{"K < 0?"}
-  E -->|yes| X["HRS: the end of the stream"]
+  E -->|yes| X["HRS: the end of the track"]
   E -->|no| W["write SFT 0(3-K) and SFT (K+1)1;<br/>INP M; write the JMP into the row of ADDs"]
   W --> N["count = 63"]
   N --> C["INP C"]
-  C --> M["C x M: jump into the row, M ADDs"]
-  M --> S["x 10^K, split: STO keeps the last three digits;<br/>SFT 0(3-K) gives the thousands, SFT (K+1)1 the units"]
-  S --> U["units: 2000 + 2 L1 - L2 + units;<br/>STO keeps the new L, SFT 03 is the carry"]
+  C --> M["C x M: jump into the row and run M ADDs"]
+  M --> S["multiply by 10^K and split: STO keeps the last three digits;<br/>SFT 0(3-K) gives the thousands, SFT (K+1)1 the units"]
+  S --> U["units: 2000 + 2 L1 - L2 + units;<br/>STO keeps the new L, SFT 03 gives the carry"]
   U --> T["thousands: carry + 2 H1 - H2 + thousands - 2"]
-  T --> R["the last sample becomes the one before"]
+  T --> R["move the sample history along"]
   R --> O["OUT H, OUT L"]
   O --> Q{"count - 1 < 0?"}
   Q -->|no| C
@@ -220,15 +243,15 @@ flowchart TD
 
 ### The first three samples, cell by cell
 
-The test clip's left channel starts with the cards `0 6 332 -458 143`: a header with K = 0 and M = 6 (a step of
-6), then the first three codes. The decoder starts with all history cells at 0.
+The left channel of the test clip starts with the cards `0 6 332 -458 143`. That is a header with K = 0 and M = 6
+(a step size of 6), followed by the first three codes. The decoder starts with every history cell at 0.
 
 | | Sample 0 | Sample 1 | Sample 2 |
 |---|---|---|---|
 | The card C | 332 | -458 | 143 |
 | C x M | 1,992 | -2,748 | 858 |
 | Thousands (SFT 03) | 1 | -2 | 0 |
-| Units (STO keeps the last three digits; SFT 11) | 992 | -748 | 858 |
+| Units (STO keeps the last three digits; then SFT 11) | 992 | -748 | 858 |
 | History before: H1, L1 and H2, L2 | 0, 0 and 0, 0 | 1, 992 and 0, 0 | 1, 236 and 1, 992 |
 | Units sum: 2000 + 2 L1 - L2 + units | 2,992 | 3,236 | 2,338 |
 | New L, and the carry | 992, carry 2 | 236, carry 3 | 338, carry 2 |
@@ -237,28 +260,31 @@ The test clip's left channel starts with the cards `0 6 332 -458 143`: a header 
 | The sample | 1,992 | 1,236 | 1,338 |
 | Check: prediction + C x step | 0 + 1,992 | 3,984 - 2,748 | 480 + 858 |
 
-The prediction for sample 1 is 2 x 1,992 - 0 = 3,984, and for sample 2 it is 2 x 1,236 - 1,992 = 480. The decoder
-never forms those five-digit numbers. It works in thousands and units throughout, and the carry joins them.
+The prediction for sample 1 is 2 x 1,992 - 0 = 3,984, and the prediction for sample 2 is 2 x 1,236 - 1,992 = 480.
+The decoder never forms those five-digit numbers. It works in thousands and units the whole time, and the carry
+joins the two.
 
-### The decoder
+### The decoder listing
 
-[`audio/decode.cq`](../audio/decode.cq), in cardiaq's six-column listing format. `carc audio/decode.cq` makes the
-deck `audio/decode.cqb`; `lub` and `dub` carry the listing built in, and assemble it as `carc` does.
+This is [`audio/decode.cq`](../audio/decode.cq), in cardiaq's six-column listing format. `carc audio/decode.cq`
+turns it into the deck `audio/decode.cqb`. `lub` and `dub` have the listing built in and assemble it the same way
+`carc` does.
 
 ```
-; Decimal ADPCM decoder: a stream of cards in, 16-bit samples out, each as two values: the thousands, then the
-; units (0-999), so the sample is thousands * 1000 + units.
+; Decimal ADPCM decoder. It reads a track of cards and outputs 16-bit samples. Each sample is output as two
+; values: first the thousands, then the units (0-999). The sample is thousands * 1000 + units.
 ;
-; The stream is blocks of 64 samples. A block starts with two cards, K (0-3) and M (1-9): its step is M * 10^K.
-; Then a card a sample, C (-500 to 499): the sample is the prediction, the line through the last two (twice the
-; last, less the one before), plus C * step. A K below zero ends the stream.
+; A track is made of blocks of 64 samples. Each block starts with two header cards, K (0-3) and M (1-9), and the
+; block's step size is M * 10^K. After the header comes one card per sample, a code C from -500 to 499. Each sample
+; is a prediction plus C times the step size. The prediction is a straight line through the previous two samples:
+; twice the previous sample, minus the one before it. A K below zero marks the end of the track.
 ;
-; A sample takes two cells: H, the thousands, and L, the units (0-999). The header writes three instructions into
-; the program: the jump into a row of nine ADDs that leaves M of them, for C * M; and the two SFTs that split
-; C * M * 10^K into thousands and units (SFT 0(3-K) and SFT (K+1)1, both keeping its sign). C * M can be four
-; digits, which a cell can't hold: the thousands are shifted out of the accumulator, the units out of the last three
-; digits, which STO keeps. The units are summed over 2000 so they stay positive: STO keeps the new units and
-; SFT 03 is the carry.
+; Each sample is kept in two cells: H holds the thousands and L holds the units (0-999). The header writes three
+; instructions into the program. The first is a jump into a row of nine ADDs, placed so that exactly M of them run;
+; that multiplies C by M. The other two are SFTs that split C * M * 10^K into thousands and units: SFT 0(3-K) and
+; SFT (K+1)1. Both keep the sign. C * M can have four digits, which a cell can't hold, so the thousands are shifted
+; out of the accumulator, and the units come from the last three digits, which is what STO keeps. The units are
+; summed on top of 2000 so the sum never goes negative. STO then keeps the new units, and SFT 03 gives the carry.
 ;
 ; Address Contents Label Opcode Operand Comment
   03            block   INP   k        03-18: the header
@@ -346,25 +372,27 @@ deck `audio/decode.cqb`; `lub` and `dub` carry the listing built in, and assembl
   88            h2      DATA  0
 ```
 
-It uses 83 of the 96 free cells: code in 03-66, data in 70-88.
+It uses 83 of the 96 free cells: the code is in cells 03 to 66 and the data in cells 70 to 88.
 
 ### The encoder
 
-`encode.py` codes one channel. For each block it tries all 36 steps and keeps the one with the least squared
-error. It codes closed loop: each code is chosen against the sample the decoder will actually produce, not the
-original, so the encoder's errors never pile up. It never lets a sample leave 16 bits. With the cards, it can
-write the samples the decoder should output, and those are what the decoder is checked against.
+`encode.py` encodes one channel. For each block, it tries all 36 step sizes and keeps the one with the smallest
+squared error. It encodes "closed loop": it chooses each code against the sample the decoder will actually
+produce, not against the original, so small errors never add up over time. It never lets a sample go outside 16
+bits. Besides the cards, it can also write out the samples the decoder should produce, and that is what we check
+the decoder against.
 
 ```python
 #!/usr/bin/env python3
-"""Encode one channel of raw 48 kHz stereo 16-bit audio as decode.cq's stream of cards.
+"""Encode one channel of raw 48 kHz stereo 16-bit audio as a track for decode.cq.
 
     encode.py IN.s16 CHANNEL START_S SECONDS CARDS [EXPECT]
 
-CHANNEL is 0 (left) or 1 (right). CARDS gets the stream, a card a line; EXPECT, if given, the samples the decoder
-should output, a line each. Each block of 64 samples takes the step M * 10^K (M 1-9, K 0-3) with the least error,
-coding closed loop against the decoder's own prediction (twice the last sample less the one before), and never
-past 16 bits.
+CHANNEL is 0 for the left channel or 1 for the right. The track is written to CARDS, one card per line. If EXPECT
+is given, the samples the decoder should output are written there, one per line. For each block of 64 samples, the
+encoder picks the step size M * 10^K (M from 1 to 9, K from 0 to 3) with the smallest error. It chooses each code
+against the decoder's own prediction (twice the previous sample, minus the one before it), and it never lets a
+sample go outside 16 bits.
 """
 import struct, sys
 
@@ -411,36 +439,58 @@ def main():
 main()
 ```
 
-It is slow: about 30 seconds for 16 seconds of one channel, all of it in the search over steps. `xtrack` is the
-same encoder in Rust (`heartburn::audio::encode`). It writes the same track, card for card, in a quarter of a
-second, and rounds halves to the even number as Python's `round` does, so the two agree. It adds one guard: when
-the prediction overshoots far enough that a small step can't bring the sample back within 16 bits, that step is
-not a choice for the block. (The Python would write a sample the decoder can't hold.) The largest step, 9,000,
-always reaches.
+It is slow. It takes about 30 seconds to encode 16 seconds of one channel, and nearly all of that time goes into
+trying every step size. `xtrack` is the same encoder written in Rust (`heartburn::audio::encode`). It writes exactly
+the same track, card for card, in about a quarter of a second. It even rounds halves to the nearest even number,
+as Python's `round` does, so that the two agree. It adds one safeguard. Sometimes the prediction overshoots so far
+that a small step size can't bring the sample back inside 16 bits. When that happens, `xtrack` doesn't consider
+that step size for the block. (The Python version would write a sample the decoder can't hold.) The largest step
+size, 9,000, can always reach, so every block still gets a step size.
 
-### Running it
+### Tracks are CARDIAC input
 
-This is how the mono player was first put together: the Python encoder, `burn` and a few lines of Python. The input
-is raw 48 kHz stereo 16-bit samples, which `ffmpeg` makes from any audio file. From the repository's top, with the
-tools built:
+A track contains nothing but CARDIAC cards: one number per line, each from -999 to 999. First come each block's
+two header cards, then its 64 code cards, and at the very end a -1 that makes the decoder halt. Once the decoder is
+loaded, every card goes into the card reader exactly as it appears in the file, and the decoder's INP
+instructions read them one by one. The host doesn't change a single card on the way in.
+
+That is why plain `burn` can run a track with no help at all:
+
+```sh
+carc audio/decode.cq                                          # assemble the decoder into audio/decode.cqb
+burn --limit=100000000000 audio/decode.cqb < song.left.track
+```
+
+`burn` loads the decoder deck and then feeds it the track as input cards, exactly as it would feed
+`burn add.cqb -- 123 456`. A track is simply a very long input deck. (The `--limit` is there because `burn`
+normally stops a program after a billion instructions, and a full-length channel takes more than that.)
+
+`burn` doesn't play audio, though. It prints every value the program outputs as a decimal number on its own line.
+
+### The first player: a shell pipe
+
+This is how we first played a channel, using the Python encoder, `burn`, and a few lines of Python to join the
+values. The input is raw 48 kHz stereo 16-bit samples, which `ffmpeg` can make from any audio file. Run these
+from the top of the repository after building the tools:
 
 ```sh
 B=target/release
 ffmpeg -i song.wav -ar 48000 -ac 2 -f s16le song.s16
 S=song.s16
 
-# assemble the decoder (once): writes audio/decode.cqb
+# assemble the decoder once; this writes audio/decode.cqb
 $B/carc audio/decode.cq
 
-# encode the left channel, 16 seconds from 107 s: the cards, and the samples the decoder should produce
+# encode the left channel, 16 seconds starting at 107 s:
+# the cards, and the samples the decoder should produce
 python3 docs/encode.py $S 0 107 16 left.cards left.expect
 
-# decode it on a CARDIAC (--limit, since 16 seconds of a channel is about 32 M instructions)
+# decode it on a CARDIAC; 16 seconds of one channel is about 32 million instructions
 $B/burn --limit=100000000000 audio/decode.cqb < left.cards > left.out
 ```
 
-**Checking it.** `burn` prints each value the program outputs on a line of its own, so each sample is two lines,
-the thousands then the units. Joining them and comparing with the model:
+**Checking the result.** `burn` prints each output value on its own line, so every sample takes two lines: the
+thousands, then the units. This joins them and compares them with the encoder's expected samples:
 
 ```sh
 python3 -c '
@@ -451,33 +501,28 @@ print(f, "matches" if got == [int(x) for x in open(f + ".expect")] else "DIFFERS
 ' left
 ```
 
-**Playing it as it's decoded.** `burn` reads each card when an INP asks for one and prints each value when OUT
-outputs it, so a pipe plays the channel while the CARDIAC decodes it. A few lines of Python join each pair into a
-16-bit sample, and `ffplay` sends the raw samples to the speakers:
+**Playing it while it decodes.** `burn` reads each card at the moment an INP asks for it, and it prints each value
+at the moment OUT produces it. So a pipe can play the channel while the CARDIAC is still decoding it. A few lines
+of Python join each pair of values into a 16-bit sample, and `ffplay` sends the raw samples to the speakers:
 
 ```mermaid
 flowchart TD
-  A["song.s16<br/>48 kHz, 16-bit"] --> E["encode.py<br/>once, ahead of time"]
-  E --> F["the track: left.cards<br/>K, M, then 64 codes, a block at a time"]
+  A["song.s16<br/>48 kHz, 16-bit"] --> E["encode.py<br/>run once, ahead of time"]
+  E --> F["the track: left.cards<br/>K, M, then 64 codes, one block after another"]
   subgraph host1 ["host: burn"]
     R["the card reader"]
   end
   subgraph cardiac ["CARDIAC: decode.cq"]
     D["prediction + C x step,<br/>in thousands and units"]
   end
-  subgraph host2 ["host: burn, then python"]
-    P["the output: burn prints each value<br/>on a line of its own, as text"] --> J["python combines: thousands x 1000 + units,<br/>as a binary 16-bit sample"]
+  subgraph host2 ["host: burn, then Python"]
+    P["burn prints each value<br/>on its own line, as text"] --> J["Python joins each pair: thousands x 1000 + units,<br/>as a binary 16-bit sample"]
   end
   F --> R
-  R -- "INP: a card, when asked" --> D
+  R -- "INP: one card, when asked" --> D
   D -- "OUT: the thousands, then the units" --> P
   J --> FF["ffplay: raw signed 16-bit, 48 kHz, mono"] --> SP(("speakers"))
 ```
-
-The Python is the host's combining step, the last on the path. It reads `burn`'s output two lines at a time, a
-sample's thousands and its units, and writes the sample as two binary bytes, little-endian: 1,992 goes to `ffplay`
-as `C8 07`. Raw samples carry no header, so `ffplay`'s flags say what they are: `-f s16le` (signed 16-bit,
-little-endian), `-ar 48000` (the rate) and `-ch_layout mono` (one channel).
 
 ```sh
 $B/burn --limit=100000000000 audio/decode.cqb < left.cards \
@@ -489,50 +534,89 @@ for h in sys.stdin:
   | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 ```
 
-This is the mono player. The CARDIAC decodes far faster than real time, so the sound card sets the pace: `burn`
-blocks on a full pipe and waits for the speakers to catch up. The host deals cards and moves numbers; every sample
-is worked out by the CARDIAC. We played the 16-second test clip this way, and it sounds the same as the source.
+The Python step is the host's combining step, the last one on the path. It reads `burn`'s output two lines at a
+time (a sample's thousands, then its units) and writes the sample as two binary bytes, least significant first.
+For example, 1,992 goes to `ffplay` as the bytes `C8 07`. Raw samples have no header, so `ffplay` has to be told
+what they are: `-f s16le` means signed 16-bit little-endian, `-ar 48000` is the sample rate, and `-ch_layout mono`
+means one channel.
 
-### lub: the mono player as a program
+The CARDIAC decodes far faster than real time, so the sound card sets the speed. When the pipe is full, `burn`
+waits for the speakers to catch up. We played the 16-second test clip this way, and it sounded the same as the
+source.
 
-`lub` is that pipe's `burn` and Python in one program, about 130 lines with its help and error messages. It runs
-one CARDIAC on the decoder, reads a card of the track each time an INP asks for one, joins each pair of output
-values into a sample, and writes the sample to standard output as soon as it is made. `xtrack` makes the track:
+### lub: the mono player in Rust
+
+The pipe above has a weak spot: the joining is done by a Python one-liner. `lub` does the same job as `burn` and
+the Python together, written in Rust, in about 130 lines including its help text and error messages. It runs one
+CARDIAC on the decoder and feeds it a card from the track each time an INP asks for one. It joins each pair of
+output values into a sample and writes the sample to standard output as soon as it is ready.
+
+Think of the difference between a terminal's numeric mode and its character mode. OUT only ever produces numbers;
+the device at the other end decides what they mean. `burn` prints them as digits. A terminal in character mode
+shows 65 as "A". `lub` treats each pair of numbers as one audio sample. Every value the CARDIAC outputs arrives at
+`lub`'s `output` function:
+
+```rust
+impl<W: Write> Console for Samples<W> {
+    fn output(&mut self, value: i32) {
+        let Some(thousands) = self.thousands.take() else {
+            self.thousands = Some(value);
+            return;
+        };
+        let Some(sample) = audio::sample(thousands, value) else {
+            die(format!("the decoder output {thousands} and {value}, which aren't a 16-bit sample"))
+        };
+        let r = self.out.write_all(&sample.to_le_bytes());
+        self.written(r);
+    }
+}
+```
+
+The first value of each pair is held as the thousands, and the second completes the sample. `audio::sample` checks
+that the pair really is a sample (the units must be 0 to 999 and the result must fit in 16 bits) and computes
+thousands x 1000 + units. The sample then goes out as two little-endian bytes.
+
+`xtrack` makes the track, and `lub` plays it:
 
 ```sh
 ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | $B/xtrack > song.left.track
 $B/lub song.left.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 ```
 
-Its samples are the same bytes as the `burn` and Python pipe's. It stops with a message, not a noise, when a track
-has no end card, a line isn't a card, or the decoder's two values aren't a 16-bit sample; and quietly when the
-player stops reading. The tests (`tests/audio.rs`, and `src/audio.rs`'s own) check that the CARDIAC's samples are
-exactly the encoder's model, in the library and through the programs.
+`lub` produces exactly the same bytes as the `burn` and Python pipe. When something is wrong, it stops with a
+message instead of playing noise: if a track has no end card, if a line isn't a card, or if the decoder's two
+values aren't a 16-bit sample. If the player stops reading, `lub` quietly stops too. The tests
+(`tests/audio.rs`, and the tests in `src/audio.rs`) check that the CARDIAC's samples exactly match the encoder's
+expected samples, both through the library and through the programs.
 
 ### Results
 
 | | |
 |---|---|
-| Exact | the decoder's output equals the encoder's model on all 768,000 samples of each channel of the test clip, through files, through the pipe and through `lub` |
-| Quality | 69.2 dB signal-to-noise over the 16-second stereo clip; by ear, no different from the source |
-| Speed | 38 + M instructions a sample, 41.3 on average with the headers (31.7 M for 768,000 samples): about 2 M instructions a second per channel at 48 kHz |
-| Memory | 83 of the 96 free cells |
-| Encoding | `xtrack`: 0.25 s for 16 seconds of a channel, about 5 s for the whole soundtrack's; the Python, 30 s |
-| Stream | 66 cards per 64 samples, plus one to end: 792,001 cards (3.0 MB as text) for 16 seconds of one channel |
-| The whole soundtrack | about 28 M cards for both channels, 56 MB stored as 2 bytes a card, the same as the raw 16-bit audio |
+| Exactness | The decoder's output matches the encoder's expected samples on all 768,000 samples of each channel of the test clip: through files, through the pipe, and through `lub`. |
+| Quality | 69.2 dB signal-to-noise over the 16-second stereo clip. By ear, no different from the source. |
+| Speed | 38 + M instructions per sample, 41.3 on average including the headers (31.7 million for 768,000 samples). That is about 2 million instructions per second for one channel at 48 kHz. |
+| Memory | 83 of the 96 free cells. |
+| Encoding | `xtrack` takes 0.25 s for 16 seconds of one channel, about 5 s for a whole channel of the soundtrack. The Python version takes 30 s for 16 seconds. |
+| Track size | 66 cards for every 64 samples, plus one card at the end: 792,001 cards (3.0 MB as text) for 16 seconds of one channel. |
+| The whole soundtrack | About 28 million cards for both channels. Stored as 2 bytes per card, that is 56 MB, the same size as the raw 16-bit audio. |
 
-The listening test turned up a 15.7 kHz whine in the 3-digit clip. It was in the source too, at the same level:
-a recording of a fridge in the mix carries a CRT's line whine. The codec reproduced it faithfully; its own error
-over the clip is about 1-2 units of a 16-bit sample.
+The listening test turned up a high whine at 15.7 kHz in the three-digit clip. It turned out to be in the source
+too, at the same level. A recording of a fridge in the mix had picked up the whine of an old CRT television. The
+codec reproduced it faithfully. The codec's own error over the clip is only one or two steps of a 16-bit sample.
 
-## Part 2: making it stereo
+## Part 2: Stereo
 
-Stereo is two channels, and the channels share nothing: each decoder keeps its own history and its own block
-headers. So stereo is two CARDIACs running `decode.cq`, one per channel, each reading its own stream.
+### Two channels, two CARDIACs
+
+A stereo recording has two channels, left and right. The two channels can be decoded completely separately. Each
+decoder keeps its own history of recent samples and reads its own block headers, and neither needs anything from
+the other. So for stereo we run two CARDIACs, both running `decode.cq`, one for each channel, each reading its own
+track.
 
 ### Stereo the batch way
 
-Running `burn` once per channel and writing the two outputs into a wav file is how the test clip was made:
+The first stereo clip was made by running `burn` once for each channel and writing the two outputs into a wav file:
 
 ```sh
 python3 docs/encode.py $S 0 107 16 left.cards  left.expect
@@ -552,34 +636,36 @@ w.writeframes(b"".join(struct.pack("<hh", a, b) for a, b in zip(*ch))); w.close(
 afplay cardiac.wav
 ```
 
-That decodes everything first and plays it after. Streaming stereo needs the two outputs interleaved as they're
-made, which a shell pipe doesn't do well.
+That decodes everything first and plays it afterwards. To stream stereo, the two channels' samples have to be
+interleaved as they are made (left, right, left, right), and a shell pipe can't easily do that.
 
-### dub: two CARDIACs, one thread
+### dub: two CARDIACs on one thread
 
-Decoding costs about 4 M instructions a second for both channels, so a thread per channel would buy nothing and add
-coordination. `dub` keeps one thread and two CARDIACs, and they take turns a block at a time. Each turn, a
-channel's CARDIAC is given its track's next 66 cards (a header and 64 codes) and runs until it asks for more, which is
-exactly one block: 64 samples. Then the other channel's turn. Each machine stays a plain mono decoder with its own
-100 cells and its own track.
+Decoding both channels costs about 4 million instructions per second, so giving each channel its own thread would
+gain nothing and would add the work of keeping the threads in step. Instead, `dub` uses one thread and two
+CARDIACs, and the two take turns, one block at a time. On each turn, a channel's CARDIAC is given the next 66 cards
+of its track (one header and 64 codes). It runs until it asks for more cards, which is exactly one block of 64
+samples. Then it is the other channel's turn. Each machine is still a plain mono decoder, with its own 100 cells
+and its own track.
 
 ```sh
 ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/xtrack > song.right.track
 $B/dub song.left.track song.right.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 ```
 
-It is the same path as the mono player, with two of everything in the middle: two tracks, two CARDIACs, two
-streams of values. The host's combining step joins each channel's thousands and units as before, then interleaves the
-channels, left then right, which is what a stereo stream is (and what `-ch_layout stereo` tells `ffplay` to expect).
+This is the same path as the mono player, with two of everything in the middle: two tracks, two CARDIACs, and two
+streams of output values. The host's combining step joins each channel's thousands and units as before. Then it
+interleaves the channels, left then right, because that is what a stereo stream is. The `-ch_layout stereo` flag
+tells `ffplay` to expect exactly that.
 
 ```mermaid
 flowchart TD
   A["song.wav"] --> PL["ffmpeg, then xtrack: the left channel's track"]
   A --> PR["ffmpeg, then xtrack: the right channel's track"]
-  subgraph dub ["dub: one thread, taking turns a block at a time"]
+  subgraph dub ["dub: one thread, taking turns one block at a time"]
     CL["CARDIAC: decode.cq"]
     CR["CARDIAC: decode.cq"]
-    J["combines each pair into a sample;<br/>left, right, left, right"]
+    J["joins each pair into a sample;<br/>left, right, left, right"]
   end
   PL --> CL
   PR --> CR
@@ -588,18 +674,35 @@ flowchart TD
   J --> FF["ffplay: raw signed 16-bit, 48 kHz, stereo"] --> SP(("speakers"))
 ```
 
-Its output is, byte for byte, the stereo clip made the batch way above, in 0.26 s for the 16 seconds. Tracks of
-different lengths are an error, said with which is longer and by how much, rather than one channel played on alone.
+`dub`'s output is byte for byte identical to the stereo clip made the batch way above, and it takes 0.26 s for
+the 16 seconds. If the two tracks are different lengths, `dub` reports an error that names the longer track and
+says by how many samples. It doesn't play one channel on its own.
 
-We considered and set aside:
+### Alternatives we rejected
 
-- **One CARDIAC alternating the channels.** It doubles the history cells and makes one program interleave two
-  decoders' bookkeeping, for the same cost. Harder to read, nothing gained.
-- **Mid and side** (one machine codes left + right, the other left - right). When the channels are alike, the
-  difference codes in fewer digits, but size isn't the goal, and undoing it would put arithmetic back on the host.
+- **One CARDIAC alternating between the channels.** This would need twice as many history cells, and one program
+  would have to keep track of two decoders' state. It costs the same and is harder to read, so it gains nothing.
+- **Mid and side.** One machine would encode left + right and the other left - right. When the two channels are
+  similar, the difference needs fewer digits. But file size isn't our goal, and undoing the mid/side split would
+  put arithmetic back on the host.
+
+### Why the tracks are made ahead of time
+
+The encoder works one block at a time, and each block depends only on its own 64 samples and the last two samples
+the decoder produced. So the host could encode each block a few milliseconds before the CARDIAC needs it, and
+`xtrack` is fast enough to do that on about 3% of one core for stereo.
+
+We don't, for two reasons. First, encoding is the expensive half of the work: for every block it tries all 36
+step sizes, predicting, dividing, rounding and adding up squared errors. If the host did that live, it would be
+doing far more arithmetic than the CARDIACs. Second, it would be circular. To encode live, the host would need the
+raw audio in memory, and then it could simply play that audio directly.
+
+A track isn't a pre-rendered result. It is the music stored in the form the player reads, just as a demo ships a
+packed music file and decodes it as it plays. Nothing is computed ahead of time except the encoding. Every sample
+is still decoded by a CARDIAC at the moment it is played.
 
 ### Still to do
 
-- A binary card format for long tracks (2 bytes a card), so the whole soundtrack isn't 130 MB of text.
-- Playing in step with a picture: the samples handed to the sound card on a clock, rather than as fast as the
-  pipe takes them.
+- A binary card format for long tracks (2 bytes per card), so that a whole soundtrack isn't 130 MB of text.
+- Playing in step with a picture, which means handing the samples to the sound card on a clock, instead of as fast
+  as the pipe will take them.

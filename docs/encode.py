@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Encode one channel of raw 48 kHz stereo 16-bit audio as decode.cq's stream of cards.
+"""Encode one channel of raw 48 kHz stereo 16-bit audio as a track for decode.cq.
 
     encode.py IN.s16 CHANNEL START_S SECONDS CARDS [EXPECT]
 
-CHANNEL is 0 (left) or 1 (right). CARDS gets the stream, a card a line; EXPECT, if given, the samples the decoder
-should output, a line each. Each block of 64 samples takes the step M * 10^K (M 1-9, K 0-3) with the least error,
-coding closed loop against the decoder's own prediction (twice the last sample less the one before), and never
-past 16 bits.
+CHANNEL is 0 for the left channel or 1 for the right. The track is written to CARDS, one card per line. If EXPECT
+is given, the samples the decoder should output are written there, one per line. For each block of 64 samples, the
+encoder picks the step size M * 10^K (M from 1 to 9, K from 0 to 3) with the smallest error. It chooses each code
+against the decoder's own prediction (twice the previous sample, minus the one before it), and it never lets a
+sample go outside 16 bits.
 """
 import struct, sys
 
