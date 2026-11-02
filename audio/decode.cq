@@ -1,0 +1,98 @@
+; Decimal ADPCM decoder: a stream of cards in, 16-bit samples out, each as two values: the thousands, then the
+; units (0-999), so the sample is thousands * 1000 + units.
+;
+; The stream is blocks of 64 samples. A block starts with two cards, K (0-3) and M (1-9): its step is M * 10^K.
+; Then a card a sample, C (-500 to 499): the sample is the prediction, the line through the last two (twice the
+; last, less the one before), plus C * step. A K below zero ends the stream.
+;
+; A sample takes two cells: H, the thousands, and L, the units (0-999). The header writes three instructions into
+; the program: the jump into a row of nine ADDs that leaves M of them, for C * M; and the two SFTs that split
+; C * M * 10^K into thousands and units (SFT 0(3-K) and SFT (K+1)1, both keeping its sign). C * M can be four
+; digits, which a cell can't hold: the thousands are shifted out of the accumulator, the units out of the last three
+; digits, which STO keeps. The units are summed over 2000 so they stay positive: STO keeps the new units and
+; SFT 03 is the carry.
+;
+; Address Contents Label Opcode Operand Comment
+  03            block   INP   k        03-18: the header
+  04                    CLA   k
+  05                    TAC   done
+  06                    SFT   10       SFT (K+1)1 for the units
+  07                    ADD   s411
+  08                    STO   slo
+  09                    CLA   s403     SFT 0(3-K) for the thousands
+  10                    SUB   k
+  11                    STO   shi
+  12                    INP   m
+  13                    CLA   jx1      JMP into the row, M ADDs from its end
+  14                    SUB   m
+  15                    ADD   00
+  16                    STO   mul
+  17                    CLA   n
+  18                    STO   cnt
+  19            sample  INP   c        19-31: C * M
+  20                    CLA   z
+  21            mul     DATA  0        (JMP x1+1-M)
+  22                    ADD   c
+  23                    ADD   c
+  24                    ADD   c
+  25                    ADD   c
+  26                    ADD   c
+  27                    ADD   c
+  28                    ADD   c
+  29                    ADD   c
+  30            x1      ADD   c
+  31                    STO   u        31-36: * 10^K, split: the units come from C * M's last three digits
+  32            shi     DATA  0        (SFT 0(3-K))
+  33                    STO   hi
+  34                    CLA   u
+  35            slo     DATA  0        (SFT (K+1)1)
+  36                    STO   lo
+  37                    CLA   two      37-43: the units, 2000 + 2 L1 - L2 + lo
+  38                    SFT   30
+  39                    ADD   l1
+  40                    ADD   l1
+  41                    SUB   l2
+  42                    ADD   lo
+  43                    STO   ln
+  44                    SFT   03       44-50: the thousands, carry + 2 H1 - H2 + hi - 2
+  45                    ADD   h1
+  46                    ADD   h1
+  47                    SUB   h2
+  48                    ADD   hi
+  49                    SUB   two
+  50                    STO   hn
+  51                    CLA   l1       51-58: the last becomes the one before
+  52                    STO   l2
+  53                    CLA   ln
+  54                    STO   l1
+  55                    CLA   h1
+  56                    STO   h2
+  57                    CLA   hn
+  58                    STO   h1
+  59                    OUT   h1       59-60: the sample
+  60                    OUT   l1
+  61                    CLA   cnt      61-65: the next, or the next block's header
+  62                    SUB   00
+  63                    STO   cnt
+  64                    TAC   block
+  65                    JMP   sample
+  66            done    HRS   00
+  70            k       DATA  0
+  71            m       DATA  0
+  72            c       DATA  0
+  73            u       DATA  0
+  74            lo      DATA  0
+  75            hi      DATA  0
+  76            ln      DATA  0
+  77            hn      DATA  0
+  78            cnt     DATA  0
+  79            n       DATA  63       a block is 64 samples
+  80            two     DATA  2
+  81            s411    DATA  411
+  82            s403    DATA  403
+  83            jx1     JMP   x1
+  84            z       DATA  0
+  85            l1      DATA  0
+  86            l2      DATA  0
+  87            h1      DATA  0
+  88            h2      DATA  0

@@ -49,8 +49,10 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per
 | [`carc`](#carc) | the assembler: compiles six-column source code (`NAME.cq`) into decks (`NAME.cqb`) | `gcc` |
 | [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
+| [`pace`](#pace-and-lub) | codes a channel of audio as a tape for CARDIAC to decode | `lame`, `flac` |
+| [`lub`](#pace-and-lub) | decodes a tape of audio on a CARDIAC and outputs the samples | `flac -d`, `mpg123` |
 
-The three commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
+The commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
 success, 1 for failure, 2 for a mistake on the command line.
 
@@ -62,7 +64,7 @@ Currently no binaries are shipped. Generate them from code if you have [Rust](ht
     cd cardiaq
     cargo build --release
 
-The three commands are then in `target/release/`; put them on your PATH.
+The commands are then in `target/release/`; put them on your PATH.
 
 ## Sample Walkthrough
 
@@ -322,6 +324,21 @@ speed, and `burn` pays nothing for it.
 Exit status is 0 on success, 1 when something failed (a listing with errors; with `--batch`, a command; in a profile,
 a run stopped at the limit), 2 for a usage error.
 
+## pace and lub
+
+Audio a CARDIAC decodes. `pace` codes one channel of raw samples (signed 16-bit, little-endian) as a tape of
+cards; `lub` runs the decoder, [`audio/decode.cq`](audio/decode.cq), on a CARDIAC, and outputs each sample as the
+CARDIAC decodes it:
+
+    ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | pace > song.left.tape
+    lub song.left.tape | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
+
+The coding is a decimal ADPCM made for CARDIAC's arithmetic: blocks of 64 samples, each with a step of M x 10^K,
+and a three-digit code a sample that corrects a prediction, the line through the last two samples. The decoder
+keeps each sample in two cells and outputs it as two values, the thousands and then the units, because -999 to
+999 is too few levels for good sound; `lub` puts each pair back together into a 16-bit sample. Every prediction,
+correction and carry is worked out on the CARDIAC: about 41 instructions a sample, 2 million a second for 48 kHz.
+
 ## How fast
 
 `burn bench` runs three countdown loops, one inside another (626.5 million instructions), on one core. On an Apple
@@ -348,7 +365,7 @@ instructions of self-modifying code) done as one. No JIT: an interpreter, as fas
 
 ## As a library
 
-All three commands are built on one Rust crate, `heartburn` for now (it holds the SDK's code as well as the engine,
+All the commands are built on one Rust crate, `heartburn` for now (it holds the SDK's code as well as the engine,
 until the runtime and the tools are packaged separately): the machine (`cardiac`), the assembler `carc` and Cardigan
 use (`assemble`), decks (`tape`), and listings in the manual's other forms (`listing`).
 
