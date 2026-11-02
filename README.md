@@ -50,17 +50,13 @@ Its engine, HEARTBURN, runs CARDIAC at about a billion instructions a second per
 | [`burn`](#burn) | the runtime: runs compiled decks in a fast interpreter | `java`, `dotnet` |
 | [`ekg`](#ekg) | the debugger and profiler | `gdb`, `perf` |
 
-`burn` and HEARTBURN, the execution engine inside it, are the runtime: all you need to run decks. `carc` and
-`ekg` are the SDK's development tools. For now the runtime and the tools come together, in one download.
-
 The three commands follow the GNU conventions: `--help` and `--version`, short and long options, `--` to end them,
 `-` for standard input, errors as `PROG: message` or `FILE:LINE:COLUMN: error: message`, and exit status 0 for
 success, 1 for failure, 2 for a mistake on the command line.
 
 ## Install
 
-Prebuilt `burn`, `carc` and `ekg` for macOS, Linux and Windows are planned, through Homebrew and winget.
-Until then, you can build them from source, with [Rust](https://rustup.rs) installed:
+Currently no binaries are shipped. Generate them from code if you have [Rust](https://rustup.rs) installed:
 
     git clone https://github.com/StrangeQuery/cardiaq
     cd cardiaq
@@ -68,7 +64,7 @@ Until then, you can build them from source, with [Rust](https://rustup.rs) insta
 
 The three commands are then in `target/release/`; put them on your PATH.
 
-## Walkthrough
+## Sample Walkthrough
 
 cardiaq uses the six-column assembly language format documented on [Brian Stuart's page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html):
 
@@ -79,9 +75,6 @@ cardiaq uses the six-column assembly language format documented on [Brian Stuart
 * **Opcode**: the instruction's name. It is redundant: the first digit of the contents says the same thing.
 * **Operand**: a cell, a label, or `label+N`.
 * **Comment**: anything on the rest of the line.
-
-The format is a little less powerful than Jason Whittington's [cardiasm](https://github.com/jawhitti/Cardiac), but it
-is a _lot_ more widely used.
 
 A program that counts down from 5 in this format. Save it as `countdown.cq`:
 
