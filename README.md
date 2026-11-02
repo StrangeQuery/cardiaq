@@ -344,7 +344,8 @@ The coding is a decimal ADPCM made for CARDIAC's arithmetic: blocks of 64 sample
 and a three-digit code a sample that corrects a prediction, the line through the last two samples. The decoder
 keeps each sample in two cells and outputs it as two values, the thousands and then the units, because -999 to
 999 is too few levels for good sound; `lub` and `dub` put each pair back together into a 16-bit sample. Every prediction,
-correction and carry is worked out on the CARDIAC: about 41 instructions a sample, 2 million a second for 48 kHz.
+correction and carry is worked out on the CARDIAC: about 41 instructions a sample, 2 million a second for 48 kHz. How it was
+built, and why it has to be this way: [docs/AUDIO.md](docs/AUDIO.md).
 
 ## How fast
 

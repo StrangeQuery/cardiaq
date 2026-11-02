@@ -1,1 +1,3 @@
 /target
+# the deck carc makes of the audio decoder (lub and dub assemble it themselves)
+/audio/decode.cqb
