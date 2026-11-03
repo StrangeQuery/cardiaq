@@ -23,7 +23,8 @@ sample being made, one instruction at a time.
 In [Cardigan](https://lab.strangequery.com/cardigan/), open `decode.cq` and paste the track's numbers into the input
 cards box.
 
-To decode the whole track at once, `burn` prints every value and `lub` writes the samples:
+To decode the whole track at once, `burn` prints every value, and `lub` writes the samples as a raw audio file
+(`.s16`: just the samples, each a signed 16-bit little-endian number, with no header):
 
     burn audio/decode.cqb -- $(cat audio/blue-danube.track)
     lub audio/blue-danube.track > blue-danube.s16

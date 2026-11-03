@@ -488,8 +488,9 @@ of The Blue Danube takes slightly more than that.
 ### The first player: a shell pipe
 
 This is how we first played a channel, using the Python encoder, `burn`, and a few lines of Python to join the
-values. The input is raw 48 kHz stereo 16-bit samples, which `ffmpeg` can make from any audio file. Run these
-from the top of the repository after building the tools:
+values. The input is a raw audio file: nothing but 48 kHz stereo samples, each a signed 16-bit little-endian
+number, with no header. We give such files the extension `.s16`. The first command below makes one from a wav
+file with `ffmpeg`. Run these from the top of the repository after building the tools:
 
 ```sh
 B=target/release

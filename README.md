@@ -390,12 +390,20 @@ The Blue Danube that is short enough to step through in `ekg` or Cardigan.
 
 `xtrack` encodes one channel of audio into a track for the decoder.
 
-    xtrack song.left.s16 > song.left.track    # read the samples from a file
-    ... | xtrack > song.left.track            # or from standard input
+**Input.** `xtrack` reads raw audio: nothing but the samples for one channel, one after another, each a signed
+16-bit little-endian number. There is no header, so nothing in the file says what the sample rate is. We give such
+files the extension `.s16` (signed, 16 bits), but that's only a naming convention. You can make one from almost
+any audio file with `ffmpeg`. This takes the left channel of `song.wav` at 48 kHz:
 
-**Input.** Raw samples for one channel, as signed 16-bit little-endian numbers. Any sample rate works, but the rate
-isn't recorded in the track, so you have to give it to the player later. `ffmpeg -af 'pan=mono|c0=c0' -f s16le`
-makes these samples from any audio file. Use `c0=c1` instead to take the right channel.
+    ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le song.left.s16
+
+Use `c0=c1` instead of `c0=c0` to take the right channel. Any sample rate works, but because the rate isn't recorded
+anywhere, you have to give it to the player later.
+
+Then encode the samples, either from the file or straight from `ffmpeg` through a pipe:
+
+    xtrack song.left.s16 > song.left.track
+    ffmpeg -i song.wav -af 'pan=mono|c0=c0' -ar 48000 -f s16le - | xtrack > song.left.track
 
 **Output.** The track goes to standard output, one card per line. Each block of 64 samples starts with two cards,
 K and M, which give the block's step size. Then come 64 cards, one per sample, each a code from -500 to 499. The
