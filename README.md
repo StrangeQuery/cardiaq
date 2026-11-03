@@ -352,7 +352,7 @@ The samples are raw, signed 16-bit little-endian, with no header, so the player 
 
 The coding is a decimal ADPCM made for CARDIAC's arithmetic: blocks of 64 samples, each with a step of M x 10^K,
 and a three-digit code a sample that corrects a prediction, the line through the last two samples. Decoding takes
-about 41 instructions a sample, 2 million a second for a channel at 48 kHz. How it was built, and why it has to be
+about 40 instructions a sample, 2 million a second for a channel at 48 kHz. How it was built, and why it has to be
 this way: [docs/AUDIO.md](docs/AUDIO.md). To watch the decoder at work, [audio/](audio/) has a 133-card excerpt of
 The Blue Danube that is short enough to step through in `ekg` or Cardigan.
 

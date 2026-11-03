@@ -4,8 +4,13 @@ Our goal was to play CD-quality sound (48,000 samples per second, 16 bits per sa
 calculated by a CARDIAC. The host computer is allowed to feed cards to the machine and to send the numbers it
 outputs to the speakers. It is not allowed to do the arithmetic.
 
-We tested everything on a stereo soundtrack four minutes and 45 seconds long. It has music, voices, and quiet room
-noise under the voices. The quiet passages turned out to be the hardest part to get right.
+We tested everything on The Blue Danube, Johann Strauss II's waltz, in a recording by the United States Marine Band
+from around 1972. It is nine minutes long and in the public domain ([audio/README.md](../audio/README.md) says
+where it comes from). It suits a codec test because it has very soft passages and a big, loud section, and the codec
+has to handle both: tiny changes from one sample to the next in the soft parts, and huge ones in the loud parts.
+Unless we say otherwise, our test clip is the 32 seconds from 60 s to 92 s, mixed to mono. It starts in the softest
+passage of the piece and swells into the loud section, and it contains the example track that ships with the
+decoder.
 
 Part 1 builds a mono player. It covers the coding scheme, the decoder written as a CARDIAC program, the encoder,
 the shell pipe that first played a channel, and finally `lub`, the mono player as a program. Part 2 adds stereo and
@@ -46,7 +51,7 @@ Everything we built follows the same path:
 
 It has to work this way because a single CARDIAC value doesn't have enough levels for good sound. A value from
 -999 to 999 has 1,999 possible levels, which is about 11 bits. CD audio has 65,536 levels (16 bits). With only one
-value per sample, quiet passages like a voice over room noise would get just a handful of levels, and you would
+value per sample, quiet passages would get just a handful of levels, and you would
 hear hiss under every one of them. So each sample has to leave the CARDIAC as more than one value, and something
 has to put the values back together in the format the sound card expects. That is the host's last step. It is a
 change of format, like printing a number in decimal. All of the decoding (every prediction, every correction and
@@ -64,7 +69,7 @@ flowchart TD
 
 ### Why not MP3 or AAC?
 
-The soundtrack's compressed formats are built on mathematical transforms that are full of multiplications.
+Compressed formats like MP3 and AAC are built on mathematical transforms that are full of multiplications.
 CARDIAC would have to do every one of those multiplications as a loop of ADDs. That would take a couple of
 processor cores' worth of work, and it would be a large program to write. Small files aren't our goal anyway. We
 wanted a decoder simple enough to run exactly on CARDIAC.
@@ -84,34 +89,36 @@ A card holds three digits. We tried both extremes:
   similar to the 4-bit ADPCM used in 90s video games.
 - **Three digits per sample**, so one sample per card. The code runs from -500 to 499.
 
-File size wasn't the goal, so the number of cards didn't decide it. On our 16-second test clip (from 107 s to 123
-s, a voice over room noise), one digit per sample reached 31 dB signal-to-noise, and you could hear hiss under the
-voice. Three digits reached 69.7 dB, and by ear it couldn't be told apart from the source. We use three digits.
+File size wasn't the goal, so the number of cards didn't decide it. On our test clip, one digit per sample reached
+38.5 dB signal-to-noise, and three digits reached 76.9 dB. (These use the block headers described in the next
+section.) A difference of 38 dB means the three-digit version's errors are about 80 times smaller. We use three
+digits.
 
 ### Adapting the step size
 
 Our first version adjusted the step size as it went, based on the codes themselves, the way IMA ADPCM does. A large
-code made the step grow and a small one made it shrink. That worked badly on this soundtrack, which is mixed loud
-and heavily limited:
+code made the step grow and a small one made it shrink. That worked badly on this recording, because the music
+keeps jumping from soft to loud:
 
 | Clip | 1 digit | 3 digits |
 |---|---|---|
-| 16 s from 107 s, step adapted from the codes | 23.6 dB | 29.0 dB |
+| The test clip, step adapted from the codes | 28.3 dB | 42.1 dB |
 
-With three digits, 50,593 of the clip's 768,000 codes hit the ends of their range. The step size couldn't grow
-fast enough to keep up with the music (this is called slope overload). Rules that made the step grow faster helped
-three digits (up to 49.1 dB on 8 seconds) but made one digit worse (down to 19.0 dB).
+With three digits, 9,320 of the clip's 1,536,000 codes hit the ends of their range. The step size couldn't grow
+fast enough to keep up with the music (this is called slope overload). We tried rules that made the step grow
+faster, on the 8 seconds from 84 s. They helped three digits, from 40.4 dB up to 55.2 dB, but made one digit
+worse, from 27.8 dB down to 20.4 dB.
 
 The fix is the one used by the sound chips in the PlayStation and the SNES. The encoder chooses the step size for
 each short block of samples and sends it as a header at the start of the block. On CARDIAC that costs only a few
-extra cards. These are the results for 4 seconds starting at 107 s:
+extra cards. These are the results for the 4 seconds starting at 86 s, in the loud section:
 
 | Block | 1 digit | 3 digits |
 |---|---|---|
-| 16 samples | 32.4 dB | |
-| 28 samples | 31.9 dB | |
-| 32 samples | | 71.1 dB |
-| 64 samples | | 70.3 dB |
+| 16 samples | 37.3 dB | |
+| 28 samples | 36.3 dB | |
+| 32 samples | | 75.4 dB |
+| 64 samples | | 74.1 dB |
 
 We use blocks of 64 samples, so there are two header cards for every 64 code cards.
 
@@ -141,30 +148,32 @@ We considered letting each block choose between two predictions:
 A decoder that let each block choose came to about 106 cells, and only 96 are free. The choice would need another
 header card, which would rewrite four more instructions (an ADD or SUB of the sample history, or of a zero), plus
 the code to build those instructions. So we measured what the choice was actually worth, using one second at each
-of eight points in the soundtrack:
+of eight points in the piece, four soft and four loud:
 
-| Clip (s) | Either, chosen per block | Line only | Previous sample only |
-|---|---|---|---|
-| 20 | 60.2 | 59.6 | 60.1 |
-| 60 | 70.9 | 68.5 | 68.6 |
-| 110 | 70.1 | 68.3 | 69.4 |
-| 140 | 76.8 | 75.7 | 75.3 |
-| 160 | 111.4 | 111.4 | 96.9 |
-| 200 | 89.9 | 89.9 | 84.4 |
-| 230 | 105.9 | 105.9 | 105.9 |
-| 270 | 70.0 | 64.8 | 69.0 |
+| Second | Loudness | Either, chosen per block | Line only | Previous sample only |
+|---|---|---|---|---|
+| 62 | soft | 94.6 | 94.6 | 94.6 |
+| 87 | loud | 75.7 | 75.7 | 71.8 |
+| 150 | loud | 76.9 | 76.9 | 72.3 |
+| 210 | loud | 88.7 | 88.7 | 75.3 |
+| 362 | soft | 89.3 | 89.3 | 89.3 |
+| 388 | loud | 71.2 | 71.0 | 67.8 |
+| 510 | soft | 91.3 | 91.3 | 91.3 |
+| 540 | loud | 60.5 | 59.3 | 60.1 |
 
 (signal-to-noise, in dB)
 
-Using the straight line on its own costs at most 5 dB, and it never drops below 59.6 dB. That compromise fits in
+Using the straight line on its own costs at most 1.2 dB, and it never drops below 59.3 dB. Using only the
+previous sample would cost up to 13.4 dB. So the straight line alone is a good compromise, and it fits in
 memory. So the straight line is the only prediction, and each block's header is just two cards, K and M.
 
-The figure below shows the prediction at work on twelve real samples. Each hollow circle is where the line through
-the two previous samples lands. Each arrow is the correction, C times the block's step size, that moves the
-prediction to the actual sample. This block is noisy, so the corrections are large. On smooth music the circles
-sit almost on top of the samples, and the codes are small.
+The figure below shows the prediction at work on twelve samples of the example track, where the block's step size
+is 20. Each hollow circle is where the line through the two previous samples lands. Each arrow is the correction,
+C times the step size, that moves the prediction to the actual sample. Where the music bends, the line overshoots
+and the corrections are large. Where it runs straight, the circles sit almost on top of the samples, and the codes
+are small.
 
-![The decoder's prediction and correction on samples 8-19 of the test clip's left channel](figures/prediction.svg)
+![The decoder's prediction and correction on samples 8-19 of the example track](figures/prediction.svg)
 
 ### Fitting a 16-bit sample into three-digit cells
 
@@ -199,8 +208,8 @@ memory. A K below zero marks the end of the track.
 ### A bug: a product too big for a cell
 
 The first version of the decoder stored C x M in a cell and then shifted the thousands and the units out of that
-cell. But a cell holds only three digits, and C x M can have four, so the thousands were lost. The very first
-sample of the test came out as 40 instead of 2,040. Comparing against the encoder's expected output caught it on
+cell. But a cell holds only three digits, and C x M can have four, so the thousands were lost. In our first
+test, a sample that should have been 2,040 came out as 40. Comparing against the encoder's expected output caught it on
 sample 0, and stepping through in `ekg` showed why: after `SFT 03`, the thousands were 0, because the cell being
 shifted held 040.
 
@@ -447,9 +456,9 @@ def main():
 main()
 ```
 
-It is slow. It takes about 30 seconds to encode 16 seconds of one channel, and nearly all of that time goes into
+It is slow. It takes about 20 seconds to encode the 32-second test clip, and nearly all of that time goes into
 trying every step size. `xtrack` is the same encoder written in Rust (`heartburn::audio::encode`). It writes exactly
-the same track, card for card, in about a quarter of a second. It even rounds halves to the nearest even number,
+the same track, card for card, in under half a second. It even rounds halves to the nearest even number,
 as Python's `round` does, so that the two agree. It adds one safeguard. Sometimes the prediction overshoots so far
 that a small step size can't bring the sample back inside 16 bits. When that happens, `xtrack` doesn't consider
 that step size for the block. (The Python version would write a sample the decoder can't hold.) The largest step
@@ -465,13 +474,14 @@ instructions read them one by one. The host doesn't change a single card on the 
 That is why plain `burn` can run a track with no help at all:
 
 ```sh
-carc audio/decode.cq                                          # assemble the decoder into audio/decode.cqb
-burn --limit=100000000000 audio/decode.cqb < song.left.track
+carc audio/decode.cq                                   # assemble the decoder into audio/decode.cqb
+burn audio/decode.cqb < audio/blue-danube.track       # the example track: 128 samples
 ```
 
 `burn` loads the decoder deck and then feeds it the track as input cards, exactly as it would feed
-`burn add.cqb -- 123 456`. A track is simply a very long input deck. (The `--limit` is there because `burn`
-normally stops a program after a billion instructions, and a full-length channel takes more than that.)
+`burn add.cqb -- 123 456`. A track is simply a long input deck. For a track longer than a few minutes, add
+`--limit=100000000000`, because `burn` normally stops a program after a billion instructions, and a whole channel
+of The Blue Danube takes slightly more than that.
 
 `burn` doesn't play audio, though. It prints every value the program outputs as a decimal number on its own line.
 
@@ -489,11 +499,11 @@ S=song.s16
 # assemble the decoder once; this writes audio/decode.cqb
 $B/carc audio/decode.cq
 
-# encode the left channel, 16 seconds starting at 107 s:
+# encode the left channel, 32 seconds starting at 60 s:
 # the cards, and the samples the decoder should produce
-python3 docs/encode.py $S 0 107 16 left.cards left.expect
+python3 docs/encode.py $S 0 60 32 left.cards left.expect
 
-# decode it on a CARDIAC; 16 seconds of one channel is about 32 million instructions
+# decode it on a CARDIAC; 32 seconds of one channel is about 61 million instructions
 $B/burn --limit=100000000000 audio/decode.cqb < left.cards > left.out
 ```
 
@@ -549,8 +559,7 @@ what they are: `-f s16le` means signed 16-bit little-endian, `-ar 48000` is the 
 means one channel.
 
 The CARDIAC decodes far faster than real time, so the sound card sets the speed. When the pipe is full, `burn`
-waits for the speakers to catch up. We played the 16-second test clip this way, and it sounded the same as the
-source.
+waits for the speakers to catch up.
 
 ### lub: the mono player in Rust
 
@@ -601,17 +610,13 @@ expected samples, both through the library and through the programs.
 
 | | |
 |---|---|
-| Exactness | The decoder's output matches the encoder's expected samples on all 768,000 samples of each channel of the test clip: through files, through the pipe, and through `lub`. |
-| Quality | 69.2 dB signal-to-noise over the 16-second stereo clip. By ear, no different from the source. |
-| Speed | 38 + M instructions per sample, 41.3 on average including the headers (31.7 million for 768,000 samples). That is about 2 million instructions per second for one channel at 48 kHz. |
+| Exactness | The decoder's output matches the encoder's expected samples on all 1,536,000 samples of each channel of the test clip in stereo, through `burn` and through `lub`. |
+| Quality | 77.8 dB signal-to-noise over the test clip. |
+| Speed | 38 + M instructions per sample, 39.5 on average including the headers and the loader (60.6 million for 1,536,000 samples). That is about 1.9 million instructions per second for one channel at 48 kHz. |
 | Memory | 83 of the 96 free cells. |
-| Encoding | `xtrack` takes 0.25 s for 16 seconds of one channel, about 5 s for a whole channel of the soundtrack. The Python version takes 30 s for 16 seconds. |
-| Track size | 66 cards for every 64 samples, plus one card at the end: 792,001 cards (3.0 MB as text) for 16 seconds of one channel. |
-| The whole soundtrack | About 28 million cards for both channels. Stored as 2 bytes per card, that is 56 MB, the same size as the raw 16-bit audio. |
-
-The listening test turned up a high whine at 15.7 kHz in the three-digit clip. It turned out to be in the source
-too, at the same level. A recording of a fridge in the mix had picked up the whine of an old CRT television. The
-codec reproduced it faithfully. The codec's own error over the clip is only one or two steps of a 16-bit sample.
+| Encoding | `xtrack` takes 0.46 s for the test clip and 8.1 s for one channel of the whole nine-minute piece. The Python version takes 20 s for the test clip. |
+| Track size | 66 cards for every 64 samples, plus one card at the end: 1,584,001 cards (5.2 MB as text) for the test clip. |
+| The whole piece | 27.2 million cards per channel, 54.4 million for stereo. Stored as 2 bytes per card, that is 109 MB, about the same size as the raw 16-bit audio (105 MB). As text it is 186 MB. |
 
 ## Part 2: Stereo
 
@@ -627,8 +632,8 @@ track.
 The first stereo clip was made by running `burn` once for each channel and writing the two outputs into a wav file:
 
 ```sh
-python3 docs/encode.py $S 0 107 16 left.cards  left.expect
-python3 docs/encode.py $S 1 107 16 right.cards right.expect
+python3 docs/encode.py $S 0 60 32 left.cards  left.expect
+python3 docs/encode.py $S 1 60 32 right.cards right.expect
 $B/burn --limit=100000000000 audio/decode.cqb < left.cards  > left.out
 $B/burn --limit=100000000000 audio/decode.cqb < right.cards > right.out
 
@@ -682,8 +687,8 @@ flowchart TD
   J --> FF["ffplay: raw signed 16-bit, 48 kHz, stereo"] --> SP(("speakers"))
 ```
 
-`dub`'s output is byte for byte identical to the stereo clip made the batch way above, and it takes 0.26 s for
-the 16 seconds. If the two tracks are different lengths, `dub` reports an error that names the longer track and
+`dub`'s output is byte for byte the two channels of the batch way above, interleaved, and it takes 0.24 s for
+the 32-second test clip. If the two tracks are different lengths, `dub` reports an error that names the longer track and
 says by how many samples. It doesn't play one channel on its own.
 
 ### Alternatives we rejected
@@ -711,6 +716,6 @@ is still decoded by a CARDIAC at the moment it is played.
 
 ### Still to do
 
-- A binary card format for long tracks (2 bytes per card), so that a whole soundtrack isn't 130 MB of text.
+- A binary card format for long tracks (2 bytes per card), so that a whole piece isn't 186 MB of text.
 - Playing in step with a picture, which means handing the samples to the sound card on a clock, instead of as fast
   as the pipe will take them.

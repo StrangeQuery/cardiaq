@@ -37,7 +37,7 @@ for v in range(int(lo // 1000) * 1000, int(hi) + 1, 1000):
     if v < lo: continue
     o.append(f'<line x1="{L}" x2="{W - R}" y1="{Y(v):.1f}" y2="{Y(v):.1f}" stroke="#eceef3"/>')
     o.append(f'<text x="{L - 8}" y="{Y(v) + 4:.1f}" text-anchor="end" fill="{faint}">{v:,}</text>')
-o.append(f'<text x="{L}" y="{T - 18}" fill="{ink}" font-weight="bold">Block {b}: step {m} x 10^{k} = {step}. Samples {first}-{first + count - 1} of the left channel</text>')
+o.append(f'<text x="{L}" y="{T - 18}" fill="{ink}" font-weight="bold">Block {b}: step {m} x 10^{k} = {step}. Samples {first}-{first + count - 1} of audio/blue-danube.track</text>')
 # the samples, joined
 pts = " ".join(f"{X(i):.1f},{Y(s[i]):.1f}" for i in range(first - 2, first + count))
 o.append(f'<polyline points="{pts}" fill="none" stroke="#c9ceda" stroke-width="1.5"/>')
@@ -49,12 +49,13 @@ for i in idx:
         o.append(f'<line x1="{X(i):.1f}" y1="{Y(pred[i]):.1f}" x2="{X(i):.1f}" y2="{Y(s[i]):.1f}" stroke="{cc}" stroke-width="2" marker-end="url(#a)"/>')
 for i in range(first - 2, first + count):
     o.append(f'<circle cx="{X(i):.1f}" cy="{Y(s[i]):.1f}" r="4.5" fill="{ink}"/>')
-# one sample spelled out
+# one sample spelled out, its labels to the left of it, right-aligned
 j = idx[len(idx) // 2]
 c = code(j)
-o.append(f'<text x="{X(j) + 10:.1f}" y="{Y(pred[j]) + (4 if pred[j] > s[j] else 14):.1f}" fill="{pc}">prediction 2({s[j - 1]:,}) - ({s[j - 2]:,}) = {pred[j]:,}</text>')
-o.append(f'<text x="{X(j) + 10:.1f}" y="{(Y(pred[j]) + Y(s[j])) / 2 + 4:.1f}" fill="{cc}">C = {c}: {c} x {step} = {c * step:,}</text>')
-o.append(f'<text x="{X(j) + 10:.1f}" y="{Y(s[j]) + (24 if pred[j] > s[j] else -10):.1f}" fill="{ink}">sample {s[j]:,}</text>')
+lx = X(j) - 12
+o.append(f'<text x="{lx:.1f}" y="{Y(pred[j]) + 4:.1f}" text-anchor="end" fill="{pc}">prediction 2({s[j - 1]:,}) - ({s[j - 2]:,}) = {pred[j]:,}</text>')
+o.append(f'<text x="{lx:.1f}" y="{(Y(pred[j]) + Y(s[j])) / 2 + 4:.1f}" text-anchor="end" fill="{cc}">C = {c}: {c} x {step} = {c * step:,}</text>')
+o.append(f'<text x="{lx:.1f}" y="{Y(s[j]) + 4:.1f}" text-anchor="end" fill="{ink}">sample {s[j]:,}</text>')
 # legend
 lx, ly = L, H - 18
 o.append(f'<circle cx="{lx + 5}" cy="{ly - 4}" r="4.5" fill="{ink}"/><text x="{lx + 15}" y="{ly}" fill="{ink}">sample (what OUT outputs)</text>')
