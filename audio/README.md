@@ -60,6 +60,24 @@ Encode the right channel as well, using `c0=c1` to pick it, then play both track
     xtrack song.right.s16 > song.right.track
     dub song.left.track song.right.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 
+### From your own program
+
+`lub` and `dub` are thin wrappers around the library. `heartburn::audio::Channel` decodes one track, and
+`heartburn::audio::Stereo` decodes two, one block of 64 samples at a time:
+
+```rust
+use heartburn::{audio, tape};
+
+let left = tape::values(&std::fs::read_to_string("song.left.track")?)?;
+let right = tape::values(&std::fs::read_to_string("song.right.track")?)?;
+let mut stereo = audio::Stereo::new(left.into_iter(), right.into_iter());
+while let Some(block) = stereo.next_block().map_err(|(side, e)| format!("{side:?} track: {e}"))? {
+    for [left, right] in block {
+        // two 16-bit samples, decoded by the two CARDIACs
+    }
+}
+```
+
 ### Stepping through the example
 
 `blue-danube.track` holds 128 samples of The Blue Danube. That's only 2.7 milliseconds of music, too short to

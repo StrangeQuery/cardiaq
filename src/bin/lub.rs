@@ -1,13 +1,10 @@
-//! lub plays one channel of audio decoded by a CARDIAC. (dub plays two channels, in stereo.) A single CARDIAC runs
-//! the decoder, `audio/decode.cq`, and lub gives it the next card of the track each time an INP asks for one. The
-//! decoder outputs two values for every sample, first the thousands and then the units. lub joins each pair back
-//! into one sample and writes it to standard output as soon as the CARDIAC outputs it. lub does no other
-//! arithmetic.
+//! lub plays one channel of audio decoded by a CARDIAC. (dub plays two channels, in stereo.) The decoding is
+//! `heartburn::audio::Channel`: a CARDIAC running the decoder, `audio/decode.cq`, which turns each block of the
+//! track's cards into a block of samples. lub only reads the track and writes the samples to standard output.
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, IsTerminal, Write};
 
 use heartburn::audio;
-use heartburn::cardiac::{Console, Stop};
 use heartburn::tape;
 
 #[path = "../getopt.rs"]
@@ -18,7 +15,7 @@ const PROG: &str = "lub";
 fn usage() -> &'static str {
     "\
 Usage: lub [OPTION]... [TRACK]
-Decode one channel of audio on a CARDIAC, and output each sample as soon as it is decoded.
+Decode one channel of audio on a CARDIAC, and output the samples as they are decoded.
 
 TRACK is a track made by xtrack, with one card per line. With no TRACK, or when TRACK is -, the track is read
 from standard input. The samples go to standard output as raw signed 16-bit little-endian numbers, at the
@@ -38,36 +35,12 @@ fn die(why: impl std::fmt::Display) -> ! {
     getopt::die(PROG, why)
 }
 
-/// The decoder's output, combined: a sample for each two values, written as it is made.
-struct Samples<W: Write> {
-    out: W,
-    thousands: Option<i32>,
-}
-
-impl<W: Write> Samples<W> {
-    fn written(&mut self, r: io::Result<()>) {
-        match r {
-            Ok(()) => {}
-            // the player stopped reading: that's the end, not an error
-            Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
-            Err(e) => die(format!("standard output: {}", getopt::os_error(&e))),
-        }
-    }
-}
-
-impl<W: Write> Console for Samples<W> {
-    fn output(&mut self, value: i32) {
-        let Some(thousands) = self.thousands.take() else {
-            self.thousands = Some(value);
-            return;
-        };
-        let Some(sample) = audio::sample(thousands, value) else {
-            die(format!(
-                "the decoder output {thousands} and {value}, which aren't a 16-bit sample"
-            ))
-        };
-        let r = self.out.write_all(&sample.to_le_bytes());
-        self.written(r);
+/// The samples written; a player that stops reading is the end, not an error.
+fn written(r: io::Result<()>) {
+    match r {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+        Err(e) => die(format!("standard output: {}", getopt::os_error(&e))),
     }
 }
 
@@ -111,23 +84,22 @@ fn main() {
     let shown = if name == "-" { "standard input" } else { name };
 
     // the track, a line at a time, read as the CARDIAC asks for cards
-    let mut cards = reader.lines().enumerate().flat_map(|(n, line)| {
+    let cards = reader.lines().enumerate().flat_map(|(n, line)| {
         let line = line.unwrap_or_else(|e| die(format!("{shown}: {}", getopt::os_error(&e))));
         tape::values(&line).unwrap_or_else(|e| die(format!("{shown}: line {}: {e}", n + 1)))
     });
-    let mut samples = Samples {
-        out: BufWriter::new(io::stdout().lock()),
-        thousands: None,
-    };
-    let (stop, _) = audio::decoder()
-        .run_into(&[], &mut cards, u64::MAX, &mut samples)
-        .unwrap_or_else(|e| die(e));
-    let r = samples.out.flush();
-    samples.written(r);
-    match stop {
-        Stop::Halt if samples.thousands.is_none() => {}
-        Stop::Halt => die("the decoder stopped halfway through a sample"),
-        Stop::OutOfCards => die(format!("{shown} ended without its end card (-1)")),
-        Stop::Limit => unreachable!("lub runs without a limit"),
+    let mut channel = audio::Channel::new(cards);
+    let mut out = BufWriter::new(io::stdout().lock());
+    loop {
+        match channel.next_block() {
+            Ok(Some(block)) => {
+                let bytes: Vec<u8> = block.iter().flat_map(|s| s.to_le_bytes()).collect();
+                written(out.write_all(&bytes));
+            }
+            Ok(None) => break,
+            Err(e @ audio::Error::NoEnd) => die(format!("{shown} {e}")),
+            Err(e) => die(e),
+        }
     }
+    written(out.flush());
 }

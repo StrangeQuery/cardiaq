@@ -361,7 +361,8 @@ output on to the speakers. It works in three steps:
    one of its INP instructions asks for a card.
 3. The decoder outputs each sample as two values: first the thousands, then the units. It has to, because a single
    value from -999 to 999 doesn't have enough levels for good sound. `lub` and `dub` join each pair back into a
-   16-bit sample and write it out as soon as it is decoded.
+   16-bit sample, and write the samples out a block at a time (64 samples, about a millisecond of sound), as soon
+   as each block is decoded.
 
 Here is how to get from a wav file to your speakers, using `ffmpeg` to read the audio and `ffplay` to play it:
 
@@ -385,6 +386,23 @@ prediction, as a three-digit code times the step size. Decoding takes about 40 i
 about 2 million instructions per second for one channel at 48 kHz. [docs/AUDIO.md](docs/AUDIO.md) explains how we
 built it and why it has to work this way. To watch the decoder at work, [audio/](audio/) has a 133-card excerpt of
 The Blue Danube that is short enough to step through in `ekg` or Cardigan.
+
+To decode tracks in your own Rust program, use the library: `heartburn::audio::Channel` decodes one track and
+`heartburn::audio::Stereo` decodes two, a block of 64 samples at a time. They are the same code `lub` and `dub`
+run:
+
+```rust
+use heartburn::{audio, tape};
+
+let left = tape::values(&std::fs::read_to_string("song.left.track")?)?;
+let right = tape::values(&std::fs::read_to_string("song.right.track")?)?;
+let mut stereo = audio::Stereo::new(left.into_iter(), right.into_iter());
+while let Some(block) = stereo.next_block().map_err(|(side, e)| format!("{side:?} track: {e}"))? {
+    for [left, right] in block {
+        // two 16-bit samples, decoded by the two CARDIACs
+    }
+}
+```
 
 ## xtrack
 
@@ -421,8 +439,8 @@ bytes, or if the track can't be written. It is 2 if there is a mistake on the co
 
 ## lub
 
-`lub` plays one channel. A single CARDIAC runs the decoder on the track, and `lub` writes each sample to standard
-output as soon as the CARDIAC has decoded it.
+`lub` plays one channel. A single CARDIAC runs the decoder on the track, and `lub` writes the samples to standard
+output a block at a time, as soon as the CARDIAC has decoded each block.
 
     lub song.left.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
     xtrack < song.left.s16 | lub | ffplay ...    # the track can also come from standard input
@@ -452,8 +470,9 @@ its own CARDIAC.
 
 **How it works.** The two CARDIACs take turns on a single thread, one block at a time. First the left CARDIAC is
 given the next 66 cards of its track (one header and 64 codes), and it runs until it asks for more cards. Then the
-right CARDIAC does the same. `dub` joins each channel's pairs of values into samples, and writes them in the order
-left, right, left, right, which is what a stereo stream is.
+right CARDIAC does the same. Each channel's pairs of values are joined into samples, and `dub` writes them in the
+order left, right, left, right, which is what a stereo stream is. All of this is `heartburn::audio::Stereo`, which
+your own programs can use too.
 
 **Output.** Raw samples, as signed 16-bit little-endian numbers, in stereo, with the left sample first. As with
 `lub`, it won't write to a terminal, and if the player stops reading, `dub` stops too.
@@ -507,7 +526,8 @@ HEARTBURN is an interpreter, made as fast as an interpreter can be.
 
 All of the commands are built on one Rust crate, which is called `heartburn` for now. Until the runtime and the
 tools are packaged separately, it holds both the engine and the SDK's code: the machine (`cardiac`), the assembler
-that `carc` and Cardigan use (`assemble`), decks (`tape`), and listings in the manual's other formats (`listing`).
+that `carc` and Cardigan use (`assemble`), decks (`tape`), listings in the manual's other formats (`listing`), and
+the audio encoder and decoder that `xtrack`, `lub` and `dub` use (`audio`).
 
 ```rust
 use heartburn::listing::{self, Listing};

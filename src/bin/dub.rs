@@ -1,15 +1,11 @@
-//! dub plays two channels of audio, left and right, each decoded by its own CARDIAC. (lub plays one channel.) Both
-//! CARDIACs run the decoder, `audio/decode.cq`, on a single thread, and they take turns one block at a time. On
-//! each turn, the left CARDIAC is given the next block of cards from its track and runs until it asks for more,
-//! and then the right CARDIAC does the same. Each CARDIAC outputs two values for every sample, first the thousands
-//! and then the units. dub joins each pair back into one sample and writes the samples to standard output, left
-//! then right, which makes a stereo stream. dub does no other arithmetic.
-use std::collections::VecDeque;
+//! dub plays two channels of audio, left and right, each decoded by its own CARDIAC. (lub plays one channel.) The
+//! decoding is `heartburn::audio::Stereo`: two CARDIACs running the decoder, `audio/decode.cq`, taking turns one
+//! block at a time on a single thread. dub only reads the two tracks and writes the samples to standard output,
+//! left then right, which makes a stereo stream.
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, IsTerminal, Write};
 
 use heartburn::audio;
-use heartburn::cardiac::{Console, Event, Machine};
 use heartburn::tape;
 
 #[path = "../getopt.rs"]
@@ -41,86 +37,37 @@ fn die(why: impl std::fmt::Display) -> ! {
     getopt::die(PROG, why)
 }
 
-/// A CARDIAC's output, combined: a sample for each two values, kept until the other channel's is there too.
-struct Samples {
-    name: String,
-    thousands: Option<i32>,
-    decoded: VecDeque<i16>,
-}
-
-impl Console for Samples {
-    fn output(&mut self, value: i32) {
-        let Some(thousands) = self.thousands.take() else {
-            self.thousands = Some(value);
-            return;
-        };
-        let Some(sample) = audio::sample(thousands, value) else {
-            die(format!(
-                "{}: the decoder output {thousands} and {value}, which aren't a 16-bit sample",
-                self.name
-            ))
-        };
-        self.decoded.push_back(sample);
+/// The name a track is called by in messages.
+fn shown(name: &str) -> String {
+    if name == "-" {
+        "standard input".to_string()
+    } else {
+        name.to_string()
     }
 }
 
-/// A channel: its CARDIAC, the cards of its track still to go in, and the samples decoded.
-struct Channel {
-    cardiac: Machine,
-    cards: Box<dyn Iterator<Item = i32>>,
-    samples: Samples,
-    done: bool,
+/// A track's cards, a line at a time, read as the CARDIAC asks for them.
+fn cards(name: &str) -> Box<dyn Iterator<Item = i32>> {
+    let reader: Box<dyn BufRead> = if name == "-" {
+        Box::new(io::stdin().lock())
+    } else {
+        Box::new(BufReader::new(
+            File::open(name).unwrap_or_else(|e| die(format!("{name}: {}", getopt::os_error(&e)))),
+        ))
+    };
+    let at = shown(name);
+    Box::new(reader.lines().enumerate().flat_map(move |(n, line)| {
+        let line = line.unwrap_or_else(|e| die(format!("{at}: {}", getopt::os_error(&e))));
+        tape::values(&line).unwrap_or_else(|e| die(format!("{at}: line {}: {e}", n + 1)))
+    }))
 }
 
-impl Channel {
-    fn new(name: &str) -> Channel {
-        let shown = if name == "-" {
-            "standard input".to_string()
-        } else {
-            name.to_string()
-        };
-        let reader: Box<dyn BufRead> = if name == "-" {
-            Box::new(io::stdin().lock())
-        } else {
-            Box::new(BufReader::new(
-                File::open(name).unwrap_or_else(|e| die(format!("{name}: {}", getopt::os_error(&e)))),
-            ))
-        };
-        let at = shown.clone();
-        let cards = reader.lines().enumerate().flat_map(move |(n, line)| {
-            let line = line.unwrap_or_else(|e| die(format!("{at}: {}", getopt::os_error(&e))));
-            tape::values(&line).unwrap_or_else(|e| die(format!("{at}: line {}: {e}", n + 1)))
-        });
-        Channel {
-            cardiac: Machine::with_tapes(&audio::decoder().phases, &[]),
-            cards: Box::new(cards),
-            samples: Samples {
-                name: shown,
-                thousands: None,
-                decoded: VecDeque::new(),
-            },
-            done: false,
-        }
-    }
-
-    /// The channel's turn: its track's next block of cards into the reader, and the CARDIAC run until it asks for
-    /// more or halts at the end card.
-    fn turn(&mut self) {
-        if self.done {
-            return;
-        }
-        let block: Vec<i32> = self.cards.by_ref().take(audio::BLOCK + 2).collect();
-        self.cardiac.push(&block);
-        match self.cardiac.run(u64::MAX, &mut self.samples) {
-            Event::Halt if self.samples.thousands.is_none() => self.done = true,
-            Event::Halt => die(format!(
-                "{}: the decoder stopped halfway through a sample",
-                self.samples.name
-            )),
-            Event::Input if block.is_empty() => die(format!("{} ended without its end card (-1)", self.samples.name)),
-            Event::Input => {}
-            other => unreachable!("the decoder has no breakpoints and no phases: {other:?}"),
-        }
+/// The samples written; a player that stops reading is the end, not an error.
+fn written(r: io::Result<()>) {
+    match r {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
+        Err(e) => die(format!("standard output: {}", getopt::os_error(&e))),
     }
 }
 
@@ -155,35 +102,31 @@ fn main() {
             "standard output is a terminal: pipe the samples to a player, or to a file",
         )
     }
-    let (mut left, mut right) = (Channel::new(left), Channel::new(right));
+    let names = [shown(left), shown(right)];
+    let mut stereo = audio::Stereo::new(cards(left), cards(right));
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = |r: io::Result<()>| match r {
-        Ok(()) => {}
-        // the player stopped reading: that's the end, not an error
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => std::process::exit(0),
-        Err(e) => die(format!("standard output: {}", getopt::os_error(&e))),
-    };
-    while !(left.done && right.done) {
-        left.turn();
-        right.turn();
-        // a stereo stream is the channels' samples taken in turn, left then right
-        while !left.samples.decoded.is_empty() && !right.samples.decoded.is_empty() {
-            let l = left.samples.decoded.pop_front().unwrap();
-            let r = right.samples.decoded.pop_front().unwrap();
-            written(
-                out.write_all(&l.to_le_bytes())
-                    .and_then(|_| out.write_all(&r.to_le_bytes())),
-            );
+    loop {
+        match stereo.next_block() {
+            Ok(Some(block)) => {
+                let bytes: Vec<u8> = block.iter().flatten().flat_map(|s| s.to_le_bytes()).collect();
+                written(out.write_all(&bytes));
+            }
+            Ok(None) => break,
+            Err((side, e)) => {
+                written(out.flush());
+                let (this, other) = match side {
+                    audio::Side::Left => (&names[0], &names[1]),
+                    audio::Side::Right => (&names[1], &names[0]),
+                };
+                match e {
+                    audio::Error::Longer(n) => die(format!(
+                        "the tracks aren't the same length: {this} has {n} samples more than {other}"
+                    )),
+                    audio::Error::NoEnd => die(format!("{this} {e}")),
+                    e => die(format!("{this}: {e}")),
+                }
+            }
         }
     }
     written(out.flush());
-    let (l, r) = (left.samples.decoded.len(), right.samples.decoded.len());
-    if l != r {
-        die(format!(
-            "the tracks aren't the same length: {} has {} samples more than {}",
-            if l > r { &left.samples.name } else { &right.samples.name },
-            l.max(r),
-            if l > r { &right.samples.name } else { &left.samples.name },
-        ))
-    }
 }

@@ -565,34 +565,38 @@ waits for the speakers to catch up.
 ### lub: the mono player in Rust
 
 The pipe above has a weak spot: the joining is done by a Python one-liner. `lub` does the same job as `burn` and
-the Python together, written in Rust, in about 130 lines including its help text and error messages. It runs one
-CARDIAC on the decoder and feeds it a card from the track each time an INP asks for one. It joins each pair of
-output values into a sample and writes the sample to standard output as soon as it is ready.
+the Python together, in Rust. The decoding itself lives in the library, as `heartburn::audio::Channel`: one
+CARDIAC running the decoder, which is given the track's next 66 cards (a header and 64 codes) each time it is
+asked for a block, and runs until it wants more. `lub` is a thin wrapper of about 100 lines, including its help
+text and error messages. It reads the track, asks the `Channel` for one block of samples after another, and writes
+each block to standard output as soon as it is decoded.
 
 Think of the difference between a terminal's numeric mode and its character mode. OUT only ever produces numbers;
 the device at the other end decides what they mean. `burn` prints them as digits. A terminal in character mode
-shows 65 as "A". `lub` treats each pair of numbers as one audio sample. Every value the CARDIAC outputs arrives at
-`lub`'s `output` function:
+shows 65 as "A". `Channel` treats each pair of numbers as one audio sample. Every value the CARDIAC outputs
+arrives at this function in the library:
 
 ```rust
-impl<W: Write> Console for Samples<W> {
+impl Console for Pairs {
     fn output(&mut self, value: i32) {
         let Some(thousands) = self.thousands.take() else {
             self.thousands = Some(value);
             return;
         };
-        let Some(sample) = audio::sample(thousands, value) else {
-            die(format!("the decoder output {thousands} and {value}, which aren't a 16-bit sample"))
-        };
-        let r = self.out.write_all(&sample.to_le_bytes());
-        self.written(r);
+        match sample(thousands, value) {
+            Some(s) => self.decoded.push(s),
+            None => {
+                self.error.get_or_insert(Error::NotASample(thousands, value));
+            }
+        }
     }
 }
 ```
 
-The first value of each pair is held as the thousands, and the second completes the sample. `audio::sample` checks
-that the pair really is a sample (the units must be 0 to 999 and the result must fit in 16 bits) and computes
-thousands x 1000 + units. The sample then goes out as two little-endian bytes.
+The first value of each pair is held as the thousands, and the second completes the sample. `sample` checks that
+the pair really is a sample (the units must be 0 to 999 and the result must fit in 16 bits) and computes thousands
+x 1000 + units. If a pair isn't a sample, the error is kept, and the `Channel` returns it instead of the block.
+`lub` writes each sample as two little-endian bytes.
 
 `xtrack` makes the track, and `lub` plays it:
 
@@ -660,7 +664,8 @@ gain nothing and would add the work of keeping the threads in step. Instead, `du
 CARDIACs, and the two take turns, one block at a time. On each turn, a channel's CARDIAC is given the next 66 cards
 of its track (one header and 64 codes). It runs until it asks for more cards, which is exactly one block of 64
 samples. Then it is the other channel's turn. Each machine is still a plain mono decoder, with its own 100 cells
-and its own track.
+and its own track. This logic is in the library too, as `heartburn::audio::Stereo`, a pair of `Channel`s. `dub`
+only reads the two tracks and writes out the blocks `Stereo` gives it.
 
 ```sh
 ffmpeg -i song.wav -af 'pan=mono|c0=c1' -ar 48000 -f s16le - | $B/xtrack > song.right.track
@@ -691,6 +696,29 @@ flowchart TD
 `dub`'s output is byte for byte the two channels of the batch way above, interleaved, and it takes 0.24 s for
 the 32-second test clip. If the two tracks are different lengths, `dub` reports an error that names the longer track and
 says by how many samples. It doesn't play one channel on its own.
+
+### Using the decoder from your own program
+
+`Channel` and `Stereo` are the same code `lub` and `dub` run, so a program of your own can decode tracks exactly
+the way they do. This reads two tracks and decodes them as stereo, block by block:
+
+```rust
+use heartburn::{audio, tape};
+
+let left = tape::values(&std::fs::read_to_string("song.left.track")?)?;
+let right = tape::values(&std::fs::read_to_string("song.right.track")?)?;
+let mut stereo = audio::Stereo::new(left.into_iter(), right.into_iter());
+while let Some(block) = stereo.next_block().map_err(|(side, e)| format!("{side:?} track: {e}"))? {
+    for [left, right] in block {
+        // two 16-bit samples, decoded by the two CARDIACs
+    }
+}
+```
+
+Each call to `next_block` lets each CARDIAC decode one block of 64 samples. An error comes back as a value, saying
+which channel it came from: a track that ends without its end card, a card out of range, a pair of values that
+isn't a sample, or tracks of different lengths. `Channel::steps` says how many CARDIAC instructions a channel has
+run, if you want to count them.
 
 ### Alternatives we rejected
 
