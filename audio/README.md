@@ -133,6 +133,21 @@ The last row is the one problem every decoder on CARDIAC has to solve. The other
 for binary arithmetic. Our decoder moves the hard decisions to the encoder, which runs ahead of time on an ordinary
 computer, and leaves CARDIAC only additions and decimal shifts.
 
+Moving the decisions to the encoder costs nothing in quality. Here is how the two compare on a 32-second stretch of
+The Blue Danube (60 s to 92 s, mixed to mono), which starts in the softest passage of the piece and swells into
+the loud section:
+
+| Codec | Data per sample | Signal-to-noise |
+|---|---|---|
+| IMA ADPCM | 4 bits | 36.0 dB |
+| Ours, with one digit per sample and blocks of 32 | about 3.9 bits | 39.0 dB |
+| Ours, as `xtrack`, `lub` and `dub` use it: three digits per sample, blocks of 64 | about 10.3 bits | 77.8 dB |
+
+With about the same amount of data per sample, ours comes out 3 dB better than IMA ADPCM. That's mostly because our
+encoder tries every step size on each block and keeps the best one, while IMA ADPCM has to adjust its step size
+from the codes as it goes. Size isn't the goal on CARDIAC, though, so the real decoder spends three digits on every
+sample, and its errors end up about 42 dB quieter than IMA ADPCM's.
+
 ### Trading multiplication for powers of ten
 
 Every ADPCM decoder has to multiply. Each correction in the track is a small code, and the decoder multiplies it by
