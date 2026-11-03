@@ -104,6 +104,35 @@ sample is usually close to what you'd guess from the last few. The decoder guess
 through the previous two samples: the prediction is twice the previous sample, minus the one before that. The
 track doesn't store the samples. It stores how far off each prediction is.
 
+### Why not ordinary ADPCM?
+
+The best-known ADPCM is IMA ADPCM, which a lot of 1990s games used. Each sample is a 4-bit code, and the decoder
+does this for every sample:
+
+    step = STEP_TABLE[index]          (89 step sizes, from 7 up to 32,767)
+    diff = step >> 3
+    if code & 4: diff += step
+    if code & 2: diff += step >> 1
+    if code & 1: diff += step >> 2
+    if code & 8: sample -= diff, else sample += diff, then clamp it to 16 bits
+    index += INDEX_TABLE[code & 7], then clamp it to 0..88
+
+That's cheap on any binary computer. Almost every line of it is expensive or impossible on CARDIAC:
+
+| IMA ADPCM does | On CARDIAC, that means | Our decoder does instead |
+|---|---|---|
+| looks the step size up in a table of 89 values, up to 32,767 | most values need two cells, so the table alone needs 178 cells, and CARDIAC has 96 free | no table: each block's two header cards, K and M, give the step size M x 10^K |
+| adapts the step by looking up a second table and clamping the index | more table, and more tests | nothing to adapt: the encoder picks each block's step size ahead of time |
+| multiplies by halving the step with binary shifts (`>> 1`, `>> 2`, `>> 3`) | CARDIAC shifts decimal digits, not bits, so halving a number takes a loop of subtractions | multiplies by 10^K with one `SFT`, and by M with at most nine `ADD`s |
+| tests the code's bits (`code & 4`, `code & 2`, `code & 1`, `code & 8`) | a decimal card has no bits to test, so each test is a chain of comparisons | uses the code as a plain signed number, from -500 to 499 |
+| packs two 4-bit codes into each byte | CARDIAC has no bytes or bits, only three-digit cells | one code per card |
+| predicts that the next sample equals the previous one | (no problem) | predicts with a straight line through the previous two samples, which costs only an addition and a subtraction |
+| keeps the sample as one 16-bit number, and clamps it after each step | a 16-bit sample fits neither a cell nor the accumulator | keeps the sample in two cells, thousands and units, with a carry; the encoder never lets a sample leave 16 bits, so nothing needs clamping |
+
+The last row is the one problem every decoder on CARDIAC has to solve. The others come from IMA ADPCM being designed
+for binary arithmetic. Our decoder moves the hard decisions to the encoder, which runs ahead of time on an ordinary
+computer, and leaves CARDIAC only additions and decimal shifts.
+
 ### Trading multiplication for powers of ten
 
 Every ADPCM decoder has to multiply. Each correction in the track is a small code, and the decoder multiplies it by
