@@ -1,11 +1,14 @@
-//! Audio a CARDIAC decodes: a decimal ADPCM that fits CARDIAC's arithmetic. The encoder runs here, ahead of time;
-//! the decoder is a CARDIAC program, `audio/decode.cq`, and every sample it outputs is worked out on the CARDIAC.
+//! Audio that a CARDIAC decodes, using a form of ADPCM designed around CARDIAC's decimal arithmetic. The encoder
+//! runs here, on the host, ahead of time. The decoder is a CARDIAC program, `audio/decode.cq`, and the CARDIAC
+//! calculates every sample it outputs.
 //!
-//! A channel is a track of cards in blocks of 64 samples. A block starts with two cards, K (0-3) and M (1-9): its
-//! step is M * 10^K. Then a card a sample, C (-500 to 499): the sample is the prediction, the line through the last
-//! two (twice the last, less the one before), plus C * step. A K below zero ends the track. The decoder outputs each
-//! sample as two values, the thousands and then the units (0-999), since a value from -999 to 999 is too few
-//! levels for good sound: `sample` puts a pair back together.
+//! A channel is encoded as a track of cards, in blocks of 64 samples. Each block starts with two cards, K (0-3) and
+//! M (1-9), and the block's step size is M * 10^K. Then comes one card per sample, a code C from -500 to 499. Each
+//! sample is a prediction plus C times the step size. The prediction is a straight line through the previous two
+//! samples: twice the previous sample, minus the one before it. A K below zero marks the end of the track.
+//!
+//! The decoder outputs each sample as two values, first the thousands and then the units (0-999), because a single
+//! value from -999 to 999 doesn't have enough levels for good sound. `sample` joins a pair back into one sample.
 use crate::assemble;
 use crate::tape::Tape;
 

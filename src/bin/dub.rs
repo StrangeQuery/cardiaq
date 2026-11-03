@@ -1,8 +1,9 @@
-//! dub: play two channels of audio, left and right, each decoded by a CARDIAC of its own (lub plays one). Both
-//! CARDIACs run the decoder, `audio/decode.cq`, on one thread, taking turns a block at a time: each turn, the left
-//! one is given its track's next block of cards and runs until it asks for more, then the right one. Each outputs
-//! two values a sample, the thousands and then the units; dub puts each pair back together and writes the samples
-//! to standard output, left then right, as a stereo stream. No other arithmetic is done here.
+//! dub plays two channels of audio, left and right, each decoded by its own CARDIAC. (lub plays one channel.) Both
+//! CARDIACs run the decoder, `audio/decode.cq`, on a single thread, and they take turns one block at a time. On
+//! each turn, the left CARDIAC is given the next block of cards from its track and runs until it asks for more,
+//! and then the right CARDIAC does the same. Each CARDIAC outputs two values for every sample, first the thousands
+//! and then the units. dub joins each pair back into one sample and writes the samples to standard output, left
+//! then right, which makes a stereo stream. dub does no other arithmetic.
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, IsTerminal, Write};
@@ -19,20 +20,20 @@ const PROG: &str = "dub";
 fn usage() -> &'static str {
     "\
 Usage: dub [OPTION]... LEFT RIGHT
-Decode two channels of audio, each on a CARDIAC, and output them as one stereo stream as they are decoded.
+Decode two channels of audio, each on its own CARDIAC, and output them as one stereo stream as they are decoded.
 
-LEFT and RIGHT are the channels' tracks as xtrack codes them, a card a line; one of them may be -, standard input.
-The samples go to standard output, raw: signed 16-bit little-endian, left then right, at the rate the audio was
-coded at. To play them with ffplay (or write them to a file):
+LEFT and RIGHT are the tracks for the left and right channels, made by xtrack, with one card per line. One of
+them can be -, which means standard input. The samples go to standard output as raw signed 16-bit little-endian
+numbers, left then right, at the sample rate the audio was encoded at. To play them with ffplay:
 
   dub song.left.track song.right.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout stereo -
 
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the tracks were played to their end (or the player stopped reading), 1 if a track can't be
-read, isn't a track the decoder can decode, or the two aren't the same length, 2 for a mistake on the command
-line.
+The exit status is 0 if both tracks were played to the end, or if the player stopped reading. It is 1 if a
+track can't be read, if the decoder can't decode it, or if the two tracks are different lengths, and 2 if
+there is a mistake on the command line.
 "
 }
 

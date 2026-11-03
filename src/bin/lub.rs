@@ -1,7 +1,8 @@
-//! lub: play one channel of audio decoded by a CARDIAC (dub plays two: stereo). One CARDIAC runs the decoder,
-//! `audio/decode.cq`, reading a card of the track each time an INP asks for one. Its output is two values a sample,
-//! the thousands and then the units; lub puts each pair back together and writes the sample to standard output as
-//! soon as the CARDIAC outputs it. No other arithmetic is done here.
+//! lub plays one channel of audio decoded by a CARDIAC. (dub plays two channels, in stereo.) A single CARDIAC runs
+//! the decoder, `audio/decode.cq`, and lub gives it the next card of the track each time an INP asks for one. The
+//! decoder outputs two values for every sample, first the thousands and then the units. lub joins each pair back
+//! into one sample and writes it to standard output as soon as the CARDIAC outputs it. lub does no other
+//! arithmetic.
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, IsTerminal, Write};
 
@@ -17,19 +18,19 @@ const PROG: &str = "lub";
 fn usage() -> &'static str {
     "\
 Usage: lub [OPTION]... [TRACK]
-Decode one channel of audio on a CARDIAC, and output its samples as they are decoded.
+Decode one channel of audio on a CARDIAC, and output each sample as soon as it is decoded.
 
-TRACK is the channel as xtrack codes it, a card a line; with no TRACK, or TRACK -, it is read from standard
-input. The samples go to standard output, raw: signed 16-bit little-endian, at the rate the audio was coded at.
-To play them with ffplay (or write them to a file):
+TRACK is a track made by xtrack, with one card per line. With no TRACK, or when TRACK is -, the track is read
+from standard input. The samples go to standard output as raw signed 16-bit little-endian numbers, at the
+sample rate the audio was encoded at. To play them with ffplay:
 
   lub song.left.track | ffplay -nodisp -autoexit -f s16le -ar 48000 -ch_layout mono -
 
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the track was played to its end (or the player stopped reading), 1 if the track can't be read
-or isn't a track the decoder can decode, 2 for a mistake on the command line.
+The exit status is 0 if the track was played to the end, or if the player stopped reading. It is 1 if the
+track can't be read or the decoder can't decode it, and 2 if there is a mistake on the command line.
 "
 }
 
