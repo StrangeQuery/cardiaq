@@ -27,29 +27,34 @@ const LIMIT: u64 = 1_000_000_000;
 fn usage() -> &'static str {
     "\
 Usage: ekg [OPTION]... FILE [INPUT]...
-Debug a CARDIAC program, or profile it (--profile). FILE is a listing (NAME.cq, assembled as carc assembles
-it) or a deck (loaded by its own loader, as burn loads it), told apart by what is in it. INPUT is the cards in the
-reader when it starts (after --, so that negative cards aren't taken for options).
+Debug a CARDIAC program, or profile it with --profile.
 
-Debugging, commands are read from standard input, a line each (the command help lists them), after those given
-with -x. What the program outputs is printed as it is output, a value a line, each starting `out:`.
+FILE is either a listing (NAME.cq) or a deck, and ekg tells which from what is inside it. A listing is assembled
+the way carc assembles it. A deck is loaded through its own loader, the way burn loads it. INPUT is the cards
+that are in the reader when the program starts. Put them after --, so that negative cards aren't mistaken for
+options.
 
-Profiling, the program runs to the end and the report goes to standard output: the instructions run, the hottest
-cells, each cell's runs beside the listing, the cells the program wrote (and which of those it ran too: code it
-rewrites), the instructions it never ran. Its cards go to standard error. With no INPUT (and no --), its cards are
-read from standard input, each when an INP asks for it, as burn reads them.
+When debugging, ekg first carries out the commands given with -x, then reads more commands from standard input,
+one per line. The command help lists them. Every value the program outputs is printed as soon as it is output,
+on its own line starting with \"out:\".
 
-  -x, --eval-command=COMMAND  carry out COMMAND (any number of times, in order)
-      --batch                 carry out the -x commands, then exit, without reading standard input
-  -q, --quiet, --silent       no introduction
+When profiling, ekg runs the program to the end and prints a report on standard output. The report shows how
+many instructions ran, the hottest cells, how often each cell of the listing ran, the cells the program wrote to
+(and which of those it also ran, meaning code it rewrites), and the instructions that never ran. The program's
+own output goes to standard error. If there is no INPUT and no --, the program reads its cards from standard
+input, each one when an INP asks for it, the way burn does.
+
+  -x, --eval-command=COMMAND  carry out COMMAND (you can give any number, and they run in order)
+      --batch                 carry out the -x commands, then exit without reading standard input
+  -q, --quiet, --silent       skip the introduction
       --profile               profile instead of debugging
-      --limit=N               stop a run after N instructions (default 1000000000)
-      --start-at=NN           start a listing at cell NN (default: where carc would start it)
+      --limit=N               stop a run after N instructions (the default is 1000000000)
+      --start-at=NN           start a listing at cell NN (by default, where carc would start it)
       --help                  display this help and exit
       --version               output version information and exit
 
-Exit status is 0 on success, 1 when something failed (a listing with errors; with --batch, a command; in a
-profile, a run stopped at the limit), and 2 for a usage error.
+The exit status is 0 on success. It is 1 if something failed: the listing has errors, a -x command failed in
+--batch mode, or a profile run was stopped by the limit. It is 2 if there is a mistake on the command line.
 
 Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
 "
@@ -57,25 +62,28 @@ Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
 
 fn help() -> &'static str {
     "\
-Commands (a PLACE is a cell, 00-99, a label, or label+N):
+Commands (a PLACE is a cell from 00 to 99, a label, or label+N):
   run, r                 start the program again from the beginning, with its INPUT, and continue
-  continue, c            run until a breakpoint, a watch, a halt, or an INP with no card
-  step, s [N]            run one instruction (or N)
-  next, n [N]            step, but run a routine a JMP calls through: on to the cell after the JMP (a JMP
-                         calls when the code it jumps to reads 99, the way back, before another JMP)
+  continue, c            run until a breakpoint, a watch, a halt, or an INP with no card to read
+  step, s [N]            run one instruction, or N of them
+  next, n [N]            like step, but when a JMP calls a routine, run the whole routine and stop at the
+                         cell after the JMP (a JMP counts as a call when the code it jumps to reads cell 99,
+                         the way back, before it reaches another JMP)
   break, b PLACE         stop before the instruction in PLACE runs
-  watch PLACE            stop after an instruction writes PLACE
-  delete, d [PLACE]      remove the breakpoint and watch on PLACE (all of them without one)
-  info break, i b        the breakpoints and watches
-  info registers, i r    the PC, the accumulator, the instructions run, the cards in the reader
-  print, p PLACE         a cell: its word, and the word as an instruction (also: p acc, p pc)
-  x PLACE [N]            the words in N cells from PLACE (10 unless given)
-  list, l [PLACE]        the listing around the PC (or PLACE), the PC marked >, breakpoints b
-  set PLACE VALUE        write a cell (also: set acc VALUE, set pc PLACE)
-  input CARDS...         put cards in the reader, after those in it
-  help, h                this
+  watch PLACE            stop after an instruction writes to PLACE
+  delete, d [PLACE]      remove the breakpoint and the watch on PLACE, or all of them if no PLACE is given
+  info break, i b        list the breakpoints and watches
+  info registers, i r    show the program counter, the accumulator, the instructions run so far, and the
+                         cards in the reader
+  print, p PLACE         show a cell's value, and what it means as an instruction (p acc and p pc also work)
+  x PLACE [N]            show the values of N cells starting at PLACE (10 if N isn't given)
+  list, l [PLACE]        show the listing around the program counter, or around PLACE, with the program
+                         counter marked > and breakpoints marked b
+  set PLACE VALUE        write a value into a cell (set acc VALUE and set pc PLACE also work)
+  input CARDS...         add cards to the reader, after the ones already in it
+  help, h                show this list
   quit, q                leave
-An empty line repeats the last step, next or continue.
+Pressing Enter on an empty line repeats the last step, next or continue.
 "
 }
 

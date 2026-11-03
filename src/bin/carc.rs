@@ -18,25 +18,27 @@ fn usage() -> &'static str {
 Usage: carc [OPTION]... FILE
 Assemble a CARDIAC listing into a deck for burn.
 
-The listing has a cell a line: ADDRESS CONTENTS LABEL OPCODE OPERAND COMMENT, Brian Stuart's six columns (the
-contents may be left out: they are worked out from the opcode and operand), or the manual's ADDRESS CONTENTS
-COMMENT. Lines that aren't cells (titles, prose, ; and # comments) are skipped. With FILE -, the listing is read
-from standard input.
-The deck is the loader's 002 and 800, an address card and a contents card for each cell, then 002 8NN to start
-the program at NN: where --start-at says, or else where the listing says (a \"Start at NN.\" line, the line labelled
-start, its first instruction).
+A listing has one cell per line. The columns are either Brian Stuart's six, ADDRESS CONTENTS LABEL OPCODE
+OPERAND COMMENT, or the manual's three, ADDRESS CONTENTS COMMENT. You can leave the contents out, and carc works
+them out from the opcode and the operand. Lines that aren't cells, such as titles, prose, and comments starting
+with ; or #, are skipped. When FILE is -, the listing is read from standard input.
 
-  -o, --output=FILE  write the deck to FILE (- for standard output); by default NAME.cqb beside
-                       NAME.cq, or standard output for a listing read from standard input
+The deck starts with the loader's cards, 002 and 800. Then come two cards for each cell, its address and its
+contents, and finally 002 and 8NN, which start the program at cell NN. NN is the cell given by --start-at.
+Without it, carc looks in the listing: first for a \"Start at NN.\" line, then for a line labelled start, and
+otherwise it uses the first instruction.
+
+  -o, --output=FILE  write the deck to FILE (- means standard output). By default it goes to NAME.cqb
+                       next to NAME.cq, or to standard output if the listing came from standard input.
       --start-at=NN  start the program at cell NN
   -h, --help         display this help and exit
       --version      output version information and exit
 
-What is wrong is reported as FILE:LINE:COLUMN: error: WHAT (or warning: WHAT). A line with an error isn't
+Problems are reported as FILE:LINE:COLUMN: error: WHAT, or as warning: WHAT. A line with an error isn't
 loaded, and no deck is written while there are errors.
 
-Exit status is 0 if the deck was written, 1 if the listing has errors or a file can't be read or written, 2 for
-a mistake on the command line.
+The exit status is 0 if the deck was written, 1 if the listing has errors or a file can't be read or written,
+and 2 if there is a mistake on the command line.
 "
 }
 

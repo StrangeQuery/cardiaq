@@ -22,23 +22,27 @@ Usage: burn [OPTION]... DECK [--] [INPUT]...
   or:  burn bench
 Run a CARDIAC deck.
 
-A deck is cards, one a line (lines starting with # are comments), starting with the loader's 002 and 800,
-whatever the file is called; carc makes one from a listing. With DECK -, the deck is read from standard input.
-The program's input is the INPUT numbers after DECK, if there are any or a --, or else standard input, each card
-read when an INP asks for it. Each value it outputs is printed on a line of its own as it is output. How it
-stopped, and after how many instructions, goes to standard error.
-A program in several decks is fed them as it asks: when it stops with the PC on n (HRS n), NAME.n.cqb beside it
-goes in the reader and it starts again at 00.
+A deck is a text file with one card per line. Lines starting with # are comments. The deck has to start with the
+loader's cards, 002 and 800, but the file can have any name. carc makes a deck from a listing. When DECK is -,
+the deck is read from standard input.
 
-burn bench: how fast this machine runs CARDIAC, three nested countdown loops, 626.5 million instructions. (A deck
-called bench runs as ./bench.)
+The program's input is the INPUT numbers after DECK, if there are any or if there is a --. Otherwise the input
+comes from standard input, and each card is read when an INP asks for it. Every value the program outputs is
+printed on its own line as soon as it is output. How the program stopped, and after how many instructions, goes
+to standard error.
 
-      --limit=N  stop a program after N instructions (default 1000000000)
+A program that comes in several decks is given each deck when it asks for it. When the program halts with the
+program counter on n (HRS n), burn puts NAME.n.cqb, from the same folder, in the reader and starts again at 00.
+
+burn bench measures how fast this machine runs CARDIAC, using three nested countdown loops (626.5 million
+instructions). To run a deck that is actually called bench, use ./bench.
+
+      --limit=N  stop a program after N instructions (the default is 1000000000)
   -h, --help     display this help and exit
       --version  output version information and exit
 
-Exit status is 0 if the program halted or ran out of cards, 1 if the deck can't be read or the program doesn't
-stop, 2 for a mistake on the command line.
+The exit status is 0 if the program halted or ran out of input cards, 1 if the deck can't be read or the
+program doesn't stop, and 2 if there is a mistake on the command line.
 "
 }
 
