@@ -1,0 +1,61 @@
+# A release: on a tag vX.Y.Z, build the commands for each platform and attach them to the tag's GitHub release, one
+# archive a platform, cardiaq-TARGET.tar.gz: burn, carc, ekg, xtrack, lub and dub, with the README and licence.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-14 }
+          - { target: x86_64-apple-darwin, os: macos-15-intel }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-2022 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: cargo +stable build --release --locked --target ${{ matrix.target }} --bin burn --bin carc --bin ekg --bin xtrack --bin lub --bin dub
+      - name: Run them
+        run: |
+          exe=; [[ ${{ matrix.target }} == *windows* ]] && exe=.exe
+          for b in burn carc ekg; do "target/${{ matrix.target }}/release/$b$exe" --version; done
+      - name: Archive
+        run: |
+          exe=; [[ ${{ matrix.target }} == *windows* ]] && exe=.exe
+          mkdir dist
+          for b in burn carc ekg xtrack lub dub; do cp "target/${{ matrix.target }}/release/$b$exe" dist/; done
+          cp README.md LICENSE dist/
+          tar -czf "cardiaq-${{ matrix.target }}.tar.gz" -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: "*.tar.gz"
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Checksums and the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          gh release create "${{ github.ref_name }}" *.tar.gz SHA256SUMS --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" --notes "Install with Homebrew: brew install strangequery/tap/cardiaq. Or unpack the archive for your platform and put its folder on your PATH."

@@ -9,6 +9,8 @@ repository = "https://github.com/StrangeQuery/cardiaq"
 readme = "README.md"
 keywords = ["cardiac", "emulator", "interpreter", "retrocomputing", "education"]
 categories = ["emulators", "command-line-utilities"]
+# what crates.io gets: the library and commands, and the decoder the audio module embeds
+include = ["/src", "/audio/decode.cq", "/README.md", "/LICENSE"]
 
 [lib]
 name = "heartburn"
