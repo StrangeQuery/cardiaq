@@ -254,6 +254,8 @@ written, and 2 if there is a mistake on the command line.
 
 ## burn
 
+<img src="assets/burn.png" alt="burn's mark: a rusty sawblade with CARDIAC's instruction clock cut through it" width="160" align="right">
+
 `burn` is the runtime, and the fastest CARDIAC emulator around today.
 
     burn countdown.cqb           # run a deck
