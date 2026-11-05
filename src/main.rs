@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use heartburn::cardiac::{self, Console, Stop};
 use heartburn::listing;
+use heartburn::panics::Map;
 use heartburn::tape::values;
 
 mod cli;
@@ -34,6 +35,9 @@ to standard error.
 A program that comes in several decks is given each deck when it asks for it. When the program halts with the
 program counter on n (HRS n), burn puts NAME.n.cqb, from the same folder, in the reader and starts again at 00.
 
+A compiled program may have a panic map, NAME.map, beside its deck. With it, a program that panics (outputs
+-999 from its panic routine and halts) also says why on standard error, as Rust does, and burn exits 101.
+
 burn bench measures how fast this machine runs CARDIAC, using three nested countdown loops (626.5 million
 instructions). To run a deck that is actually called bench, use ./bench.
 
@@ -42,7 +46,8 @@ instructions). To run a deck that is actually called bench, use ./bench.
       --version  output version information and exit
 
 The exit status is 0 if the program halted or ran out of input cards, 1 if the deck can't be read or the
-program doesn't stop, and 2 if there is a mistake on the command line.
+program doesn't stop, 2 if there is a mistake on the command line, and 101 if its panic map says it panicked
+(134 for a violated unsafe precondition, as Rust aborts on one).
 "
 }
 
@@ -95,18 +100,44 @@ fn run(file: &str, input: Option<Vec<i32>>, limit: u64) {
     };
     deck.bind_dir(&dir.join("resources"))
         .unwrap_or_else(|e| die(format!("{name}: {e}")));
+    // a compiled program's panic map, NAME.map beside the deck: with it, a panic says why
+    let map_file = Path::new(file).with_extension("map");
+    let map = (file != "-" && map_file.is_file()).then(|| {
+        let text = std::fs::read_to_string(&map_file)
+            .unwrap_or_else(|e| die(format!("{}: {}", map_file.display(), getopt::os_error(&e))));
+        Map::parse(&text).unwrap_or_else(|e| die(format!("{}: {e}", map_file.display())))
+    });
     let mut teletype = Teletype(std::io::stdout().lock());
-    let (why, steps) = match input {
-        Some(cards) => deck.run_into(&cards, &mut std::iter::empty(), limit, &mut teletype),
-        None => deck.run_into(&[], &mut cli::stdin_cards(PROG), limit, &mut teletype),
-    }
-    .unwrap_or_else(|e| die(format!("{name}: {e}")));
+    let mut stdin = cli::stdin_cards(PROG);
+    let (cards, mut more): (Vec<i32>, &mut dyn Iterator<Item = i32>) = match input {
+        Some(cards) => (cards, &mut std::iter::empty()),
+        None => (vec![], &mut stdin),
+    };
+    // traced only with a map, so a run without one is as fast as ever
+    let (why, steps, panic) = match &map {
+        Some(map) => {
+            let end = deck
+                .run_traced_into(&cards, &mut more, limit, &mut teletype)
+                .unwrap_or_else(|e| die(format!("{name}: {e}")));
+            (end.stop, end.steps, map.panic(&end))
+        }
+        None => {
+            let (why, steps) = deck
+                .run_into(&cards, &mut more, limit, &mut teletype)
+                .unwrap_or_else(|e| die(format!("{name}: {e}")));
+            (why, steps, None)
+        }
+    };
     match why {
         Stop::Halt => eprintln!("     halted after {steps} instructions"),
         Stop::OutOfCards => eprintln!("     out of cards after {steps} instructions"),
         Stop::Limit => die(format!(
             "still running after {limit} instructions (--limit N to run longer)"
         )),
+    }
+    if let Some(panic) = panic {
+        eprintln!("{PROG}: {name}: {panic}");
+        std::process::exit(panic.exit_code());
     }
 }
 

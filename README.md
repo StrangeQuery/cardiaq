@@ -277,6 +277,18 @@ deck is done, it halts with the program counter on the number of the deck to loa
 whole program is finished. `burn` then does what a person running the machine would do: it puts that deck in the
 reader and starts the loader at 00. The decks can be loaded in any order, as often as the program asks.
 
+**Why a compiled program panicked.** A compiler can write a panic map beside a deck, as a .pdb sits beside an .exe:
+`cargo cardiac build` writes `NAME.map` with `NAME.cqb`. On CARDIAC a panic is just the value -999 and a halt. With
+the map beside the deck, `burn` also says why on standard error, as Rust does, and exits 101 as `cargo run` does:
+
+    $ burn days.cqb -- 13
+    -999
+         halted after 103 instructions
+    burn: days.cqb: panicked in main: index out of bounds
+
+Without a map, nothing changes, and `burn` runs at full speed: it only keeps track of where a run ended when there
+is a map to read.
+
 | | |
 |---|---|
 | `--limit=N` | stop a program after N instructions (the default is a billion) |
@@ -286,7 +298,8 @@ reader and starts the loader at 00. The decks can be loaded in any order, as oft
 Options go before the deck. Everything after the deck is input, including anything that starts with a minus sign.
 The exit status is 0 if the program halted or ran out of input cards. It is 1 if the deck can't be read, or if the
 program never stops (a run stops after a billion instructions, or after `--limit`). It is 2 if there is a mistake
-on the command line.
+on the command line. It is 101 if the panic map says the program panicked (134 for a violated unsafe
+precondition, as Rust aborts on one).
 
 ## ekg
 
@@ -526,7 +539,7 @@ HEARTBURN is an interpreter, made as fast as an interpreter can be.
 
 All of the commands are built on one Rust crate, which is called `heartburn` for now. Until the runtime and the
 tools are packaged separately, it holds both the engine and the SDK's code: the machine (`cardiac`), the assembler
-that `carc` and Cardigan use (`assemble`), decks (`tape`), listings in the manual's other formats (`listing`), and
+that `carc` and Cardigan use (`assemble`), decks (`tape`), listings in the manual's other formats (`listing`), panic maps (`panics`), and
 the audio encoder and decoder that `xtrack`, `lub` and `dub` use (`audio`).
 
 ```rust
