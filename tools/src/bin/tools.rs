@@ -1,6 +1,6 @@
 //! heartburn-tools: the CARDIAC toolchain that will leave this repo for its own: run a listing, make a deck of
-//! listings, a listing of a deck, assemble CARDIASM. Built only with the `tools` feature, so `cargo install heartburn`
-//! installs `burn` alone; the tests use it.
+//! listings, a listing of a deck, assemble CARDIASM. Built only with the `tools` feature, so a release has burn, carc
+//! and ekg alone; the tests use it.
 use std::io::{BufRead, Write};
 use std::path::Path;
 

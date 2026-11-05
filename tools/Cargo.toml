@@ -1,0 +1,39 @@
+# The cardiaq SDK's programs: burn, carc and ekg, built by the release workflow into archives and Homebrew. Never
+# published to crates.io; the library they are built on, heartburn, is.
+[package]
+name = "cardiaq"
+version = "0.1.0"
+edition = "2021"
+description = "The cardiaq SDK's programs: the carc assembler, the burn runtime, the ekg debugger"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/StrangeQuery/cardiaq"
+publish = false
+
+[[bin]]
+name = "burn"
+path = "src/main.rs"
+
+# the assembler: a listing in six columns made into a deck for burn
+[[bin]]
+name = "carc"
+path = "src/bin/carc.rs"
+
+# the debugger and profiler: step a listing or a deck, breakpoints and watches; or count where its instructions go
+[[bin]]
+name = "ekg"
+path = "src/bin/ekg.rs"
+
+# The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Built only with the
+# `tools` feature (the tests build it).
+[[bin]]
+name = "heartburn-tools"
+path = "src/bin/tools.rs"
+required-features = ["tools"]
+
+[features]
+# heartburn-tools, the toolchain's commands (see [[bin]] above)
+tools = []
+
+[dependencies]
+heartburn = { path = ".." }

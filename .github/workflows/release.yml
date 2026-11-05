@@ -1,5 +1,5 @@
 # A release: on a tag vX.Y.Z, build the commands for each platform and attach them to the tag's GitHub release, one
-# archive a platform, cardiaq-TARGET.tar.gz: burn, carc, ekg, xtrack, lub and dub, with the README and licence.
+# archive a platform, cardiaq-TARGET.tar.gz: burn, carc and ekg (the tools package), with the README and licence.
 name: release
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-      - run: cargo +stable build --release --locked --target ${{ matrix.target }} --bin burn --bin carc --bin ekg --bin xtrack --bin lub --bin dub
+      - run: cargo +stable build --release --locked --target ${{ matrix.target }} -p cardiaq --bin burn --bin carc --bin ekg
       - name: Run them
         run: |
           exe=; [[ ${{ matrix.target }} == *windows* ]] && exe=.exe
@@ -36,7 +36,7 @@ jobs:
         run: |
           exe=; [[ ${{ matrix.target }} == *windows* ]] && exe=.exe
           mkdir dist
-          for b in burn carc ekg xtrack lub dub; do cp "target/${{ matrix.target }}/release/$b$exe" dist/; done
+          for b in burn carc ekg; do cp "target/${{ matrix.target }}/release/$b$exe" dist/; done
           cp README.md LICENSE dist/
           tar -czf "cardiaq-${{ matrix.target }}.tar.gz" -C dist .
       - uses: actions/upload-artifact@v4

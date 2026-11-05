@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "cardiaq"
+version = "0.1.0"
+dependencies = [
+ "heartburn",
+]
+
+[[package]]
 name = "heartburn"
 version = "0.1.0"

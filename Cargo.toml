@@ -1,62 +1,30 @@
+[workspace]
+members = [".", "tools"]
+# `cargo build --release` here builds the library and the programs: burn, carc and ekg end up in target/release/
+default-members = [".", "tools"]
+
 [package]
 name = "heartburn"
 version = "0.1.0"
 edition = "2021"
-description = "CARDIAC tools: the carc assembler, the burn runtime, the ekg debugger"
+description = "The CARDIAC engine library: the machine, decks, listings, the assembler and panic maps, used by carc, burn, ekg and cargo-cardiac"
 rust-version = "1.97"
 license = "MIT"
 repository = "https://github.com/StrangeQuery/cardiaq"
 readme = "README.md"
 keywords = ["cardiac", "emulator", "interpreter", "retrocomputing", "education"]
-categories = ["emulators", "command-line-utilities"]
-# what crates.io gets: the library and commands, and the decoder the audio module embeds
-include = ["/src", "/audio/decode.cq", "/README.md", "/LICENSE"]
+categories = ["emulators"]
+# what crates.io gets: the library alone (the programs are in tools/, which is never published)
+include = ["/src", "/README.md", "/LICENSE"]
 
 [lib]
 name = "heartburn"
 path = "src/lib.rs"
 
-[[bin]]
-name = "burn"
-path = "src/main.rs"
-
-# the assembler: a listing in six columns made into a deck for burn
-[[bin]]
-name = "carc"
-path = "src/bin/carc.rs"
-
-# the debugger and profiler: step a listing or a deck, breakpoints and watches; or count where its instructions go
-[[bin]]
-name = "ekg"
-path = "src/bin/ekg.rs"
-
-# audio a CARDIAC decodes: xtrack codes a channel as a tape, lub decodes it on a CARDIAC and outputs the samples,
-# dub decodes two, left and right, each on a CARDIAC of its own, and outputs them as one stereo stream
-[[bin]]
-name = "xtrack"
-path = "src/bin/xtrack.rs"
-
-[[bin]]
-name = "lub"
-path = "src/bin/lub.rs"
-
-[[bin]]
-name = "dub"
-path = "src/bin/dub.rs"
-
-# The toolchain, until it has its own repo: run a listing, deck <-> listing, CARDIASM. Not installed by
-# `cargo install heartburn` (it needs the feature); the tests build it.
-[[bin]]
-name = "heartburn-tools"
-path = "src/bin/tools.rs"
-required-features = ["tools"]
-
 [features]
 # Marks a debugger page draws from (cells run, cells used as data, the last instruction), for a WebAssembly build
 # of the machine to turn on; burn, carc and ekg are built without it, the machine exactly as fast as before.
 marks = []
-# heartburn-tools, the toolchain's commands (see [[bin]] above)
-tools = []
 
 [profile.release]
 debug = false
