@@ -1,4 +1,4 @@
-//! Tapes: a program as the cards CARDIAC loads it from, and the `.tape` file they are written to.
+//! Tapes: a program as the cards CARDIAC loads it from, and the `.cqb` deck they are written to.
 //!
 //! A tape starts with the two-card loader (002, 800), then an address card and a value card for each cell of the
 //! program, then the pair 002 8xx that starts it (see `listing::deck`). The program's input comes after it.
@@ -13,9 +13,9 @@
 //! bound is complete; one with a slot still empty doesn't run.
 //!
 //! On disk each tape is a plain deck that any CARDIAC player loads: one card per line, top to bottom, a signed
-//! number, nothing else. `NAME.tape` is tape 1, `NAME.2.tape` tape 2, and so on (`Tape::save`, `Tape::load`). On
-//! another player a person reads the bug when it stops, loads `NAME.n.tape` and starts at 00; HEARTBURN does it
-//! for them. What only HEARTBURN needs, the resources' slots, is in a file beside it, `NAME.tape.meta`, a line a slot:
+//! number, nothing else. `NAME.cqb` is tape 1, `NAME.2.cqb` tape 2, and so on (`Tape::save`, `Tape::load`). On
+//! another player a person reads the bug when it stops, loads `NAME.n.cqb` and starts at 00; HEARTBURN does it
+//! for them. What only HEARTBURN needs, the resources' slots, is in a file beside it, `NAME.cqb.meta`, a line a slot:
 //!   `resource NAME ADDRESS LENGTH`      a resource's slot, those cells of tape 1, still empty; `bound` after it
 //!                                       when the cards hold the resource's values
 //!
@@ -96,7 +96,7 @@ impl Tape {
             .collect()
     }
 
-    /// The slots, as `NAME.tape.meta` holds them (empty when there are none).
+    /// The slots, as `NAME.cqb.meta` holds them (empty when there are none).
     pub fn meta_text(&self) -> String {
         self.slots
             .iter()
@@ -112,7 +112,7 @@ impl Tape {
             .collect()
     }
 
-    /// Where tape `n` of the program whose tape 1 is `path` is kept: `NAME.tape`, `NAME.2.tape`, ....
+    /// Where tape `n` of the program whose tape 1 is `path` is kept: `NAME.cqb`, `NAME.2.cqb`, ....
     pub fn phase_path(path: &Path, n: usize) -> PathBuf {
         if n == 1 {
             return path.to_path_buf();
@@ -122,7 +122,7 @@ impl Tape {
         path.with_file_name(format!("{stem}.{n}.{ext}"))
     }
 
-    /// Where the slots of the program whose tape 1 is `path` are kept: `NAME.tape.meta`.
+    /// Where the slots of the program whose tape 1 is `path` are kept: `NAME.cqb.meta`.
     pub fn meta_path(path: &Path) -> PathBuf {
         let mut p = path.as_os_str().to_owned();
         p.push(".meta");
@@ -148,7 +148,7 @@ impl Tape {
     }
 
     /// Read the program whose tape 1 is `path`: its tapes `NAME.2.tape`, `NAME.3.tape`, ... beside it, up to the
-    /// first missing, and its slots from `NAME.tape.meta`. A tape in the one-file form is read whole.
+    /// first missing, and its slots from `NAME.cqb.meta`. A tape in the one-file form is read whole.
     pub fn load(path: &Path) -> Result<Tape, String> {
         let read = |p: &Path| std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
         let text = read(path)?;
@@ -401,15 +401,15 @@ mod tests {
         };
         let dir = std::env::temp_dir().join(format!("heartburn-tape-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("x.tape");
+        let path = dir.join("x.cqb");
         let written = t.save(&path).unwrap();
-        assert_eq!(written, [path.clone(), dir.join("x.2.tape"), dir.join("x.tape.meta")]);
+        assert_eq!(written, [path.clone(), dir.join("x.2.cqb"), dir.join("x.cqb.meta")]);
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "002\n800\n003\n-005\n002\n803\n"
         );
         assert_eq!(
-            std::fs::read_to_string(dir.join("x.tape.meta")).unwrap(),
+            std::fs::read_to_string(dir.join("x.cqb.meta")).unwrap(),
             "resource key 9 2\nresource map 20 3 bound\n"
         );
         assert_eq!(Tape::load(&path).unwrap(), t);

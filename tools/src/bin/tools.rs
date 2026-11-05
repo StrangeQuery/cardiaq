@@ -1,11 +1,10 @@
 //! heartburn-tools: the CARDIAC toolchain that will leave this repo for its own: run a listing, make a deck of
-//! listings, a listing of a deck, assemble CARDIASM. Built only with the `tools` feature, so a release has burn, carc
+//! listings, a listing of a deck. Built only with the `tools` feature, so a release has burn, carc
 //! and ekg alone; the tests use it.
 use std::io::{BufRead, Write};
 use std::path::Path;
 
 use heartburn::cardiac::{self, Console, Stop};
-use heartburn::cardiasm;
 use heartburn::listing::{self, Listing, Notes};
 use heartburn::tape::{values, Tape};
 
@@ -18,8 +17,7 @@ heartburn-tools: the CARDIAC toolchain (decks are NAME.cqb, listings NAME.cq)
 
 Usage:
   heartburn-tools run NAME.cqb [-- INPUT...]
-  heartburn-tools run NAME.cardimg [-- INPUT...]
-      Run a deck: plain cards, one a line. A program in phases is fed its tapes as it asks for them:
+      Run a deck: plain cards, one a line. A program in phases is fed its decks as it asks for them:
       when it stops with the bug on n (HRS n), NAME.n.cqb beside it goes in the reader and it starts again at 00.
       Each value it outputs is printed on a line of its own as it is output. The input is the numbers after --, or
       else standard input, each card read when an INP asks for it. A resource slot (NAME.cqb.meta) is filled from
@@ -36,11 +34,9 @@ Usage:
   heartburn-tools listing FILE... [--start NN] [-o OUT]
       A program in Brian Stuart's six columns, Address, Contents, Label, Opcode, Operand, Comment, a tab between
       each, under a line saying where it starts: FILE.cq, or OUT. From a deck (each of its decks: NAME.cq,
-      NAME.2.cq, ...), CARDIASM, or listings in any form heartburn runs (their labels
+      NAME.2.cq, ...), or listings in any form heartburn runs (their labels
       and comments kept). The cells a program can run from its start are instructions, the rest DATA, unless the
       source says.
-  heartburn-tools cardiasm FILE.cardiasm
-      CARDIASM: assemble it to a deck, FILE.cardimg, beside it.
 "
 }
 
@@ -83,7 +79,7 @@ fn stdin_cards() -> impl Iterator<Item = i32> {
 fn is_tape(file: &str) -> bool {
     matches!(
         Path::new(file).extension().and_then(|e| e.to_str()),
-        Some("cqb" | "cardimg")
+        Some("cqb")
     )
 }
 
@@ -242,7 +238,7 @@ fn write_new(out: &Path, text: &str, from: &[String]) {
     std::fs::write(out, text).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
 }
 
-/// `heartburn listing`: tapes, decks, CARDIASM or listings in Brian Stuart's six columns.
+/// `heartburn listing`: decks or listings in Brian Stuart's six columns.
 fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
     let out = output
         .map(Path::new)
@@ -277,23 +273,8 @@ fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
                 one(&Tape::phase_path(&out, i + 1), &cells, start.or(at), &Notes::default());
             }
         }
-        [f] if f.ends_with(".cardiasm") => {
-            let src = std::fs::read_to_string(f).unwrap_or_else(|e| die(format!("{f}: {e}")));
-            let img = cardiasm::compile(&src).unwrap_or_else(|e| die(format!("{f}: {e}")));
-            let cells: Vec<(usize, i32)> = img.cells.iter().map(|c| (c.0 as usize, c.1)).collect();
-            let notes = Notes {
-                labels: img
-                    .cells
-                    .iter()
-                    .filter(|c| !c.2.is_empty())
-                    .map(|c| (c.2.clone(), c.0 as usize))
-                    .collect(),
-                ..Notes::default()
-            };
-            one(&out, &cells, Some(start.unwrap_or(img.entry as usize)), &notes);
-        }
-        _ if files.iter().any(|f| is_tape(f) || f.ends_with(".cardiasm")) => {
-            bad_usage("one deck or CARDIASM source at a time, and not with listings")
+        _ if files.iter().any(|f| is_tape(f)) => {
+            bad_usage("one deck at a time, and not with listings")
         }
         _ => match read_listings(files) {
             (Listing::Memory(cells), first, notes) => one(&out, &cells, start.or(first), &notes),
@@ -304,14 +285,6 @@ fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
             }
         },
     }
-}
-
-fn assemble_cardiasm(file: &str) {
-    let src = std::fs::read_to_string(file).unwrap_or_else(|e| die(format!("{file}: {e}")));
-    let img = cardiasm::compile(&src).unwrap_or_else(|e| die(format!("{file}: {e}")));
-    let out = Path::new(file).with_extension("cardimg");
-    std::fs::write(&out, cardiasm::cardimg(&img.deck)).unwrap_or_else(|e| die(format!("{}: {e}", out.display())));
-    eprintln!("{}: {} cards", out.display(), img.deck.len());
 }
 
 /// The files and options of `run` and `deck`: `--start NN` and `-o OUT` anywhere among the files.
@@ -375,7 +348,6 @@ fn main() {
             let (files, start, out) = files_and_options(rest);
             listing_of(&files, start, out.as_deref())
         }
-        [c, f] if c == "cardiasm" => assemble_cardiasm(f),
         [c] if c == "help" || c == "--help" || c == "-h" => print!("{}", usage()),
         [] => {
             eprint!("{}", usage());

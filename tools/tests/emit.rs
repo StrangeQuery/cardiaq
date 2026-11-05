@@ -1,5 +1,5 @@
 //! `heartburn listing`: programs written out in Brian Stuart's six columns read back as the same program. From
-//! the manual's listings, from tapes (each of a program's tapes), and from CARDIASM.
+//! the manual's listings, and from decks (each of a program's decks).
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -146,27 +146,6 @@ fn code_and_data() {
     assert_eq!(&out[..3], [5, 5, 5]);
 }
 
-#[test]
-fn cardiasm_keeps_its_names() {
-    let d = dir("cardiasm");
-    let src = d.join("add.cardiasm");
-    std::fs::write(
-        &src,
-        "DEF a 0\nDEF b 0\nstart: INP a\nINP b\nCLA a\nADD b\nSTO a\nOUT a\nHRS 0\n",
-    )
-    .unwrap();
-    let out = d.join("add.cq");
-    heartburn(&["listing", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
-    let six = std::fs::read_to_string(&out).unwrap();
-    assert!(six.starts_with("Start at 03.\n"), "{six}");
-    assert!(six.contains("03\t098\tstart\tINP\ta\n"), "{six}");
-    assert!(six.contains("98\t000\ta\tDATA\t000\n"), "{six}");
-    let printed = heartburn(&["run", out.to_str().unwrap(), "--", "2", "3"]);
-    assert_eq!(printed, "5\n");
-}
-
-/// Brian Stuart's push: a routine that returns by running on into cell 99, where the JMP that called it left the
-/// return. The cell after the call is code.
 #[test]
 fn a_routine_that_runs_into_99_returns() {
     // 10 JMP 97 (a call), 11 OUT 30, 12 HRS; 97 STO 30, 98 CLA 30 (and on into 99); 30 data

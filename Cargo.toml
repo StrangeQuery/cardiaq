@@ -11,11 +11,12 @@ description = "The CARDIAC engine library: the machine, decks, listings, the ass
 rust-version = "1.97"
 license = "MIT"
 repository = "https://github.com/StrangeQuery/cardiaq"
-readme = "README.md"
+homepage = "https://lab.strangequery.com/cardiac/"
+readme = "HEARTBURN.md"
 keywords = ["cardiac", "emulator", "interpreter", "retrocomputing", "education"]
 categories = ["emulators"]
 # what crates.io gets: the library alone (the programs are in tools/, which is never published)
-include = ["/src", "/README.md", "/LICENSE"]
+include = ["/src", "/HEARTBURN.md", "/LICENSE"]
 
 [lib]
 name = "heartburn"
