@@ -2,9 +2,9 @@
 # the release workflow into archives for each platform. The library they are built on is heartburn.
 [package]
 name = "cardiaq"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-description = "CARDIAC tools: burn, a stupid fast runtime; carc, the assembler; ekg, the debugger and profiler"
+description = "The world's fastest CARDIAC emulator, with a debugger and an assembler."
 rust-version = "1.97"
 license = "MIT"
 repository = "https://github.com/StrangeQuery/cardiaq"
@@ -42,4 +42,4 @@ required-features = ["tools"]
 tools = []
 
 [dependencies]
-heartburn = { version = "0.1.0", path = ".." }
+heartburn = { version = "0.1.1", path = ".." }
