@@ -1,5 +1,6 @@
 # A release: on a tag vX.Y.Z, build the commands for each platform and attach them to the tag's GitHub release, one
-# archive a platform, cardiaq-TARGET.tar.gz: burn, carc and ekg (the tools package), with the README and licence.
+# archive a platform, heartburn-TARGET.tar.gz: burn, carc and ekg (heartburn's `tools` feature), with the README and
+# licence.
 name: release
 on:
   push:
@@ -27,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-      - run: cargo +stable build --release --locked --target ${{ matrix.target }} -p cardiaq --bin burn --bin carc --bin ekg
+      - run: cargo +stable build --release --locked --target ${{ matrix.target }} --features tools --bin burn --bin carc --bin ekg
       - name: Run them
         run: |
           exe=; [[ ${{ matrix.target }} == *windows* ]] && exe=.exe
@@ -38,7 +39,7 @@ jobs:
           mkdir dist
           for b in burn carc ekg; do cp "target/${{ matrix.target }}/release/$b$exe" dist/; done
           cp README.md LICENSE dist/
-          tar -czf "cardiaq-${{ matrix.target }}.tar.gz" -C dist .
+          tar -czf "heartburn-${{ matrix.target }}.tar.gz" -C dist .
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
@@ -58,4 +59,4 @@ jobs:
         run: |
           sha256sum *.tar.gz > SHA256SUMS
           gh release create "${{ github.ref_name }}" *.tar.gz SHA256SUMS --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" --notes "Install with Homebrew: brew install strangequery/tap/cardiaq. Or unpack the archive for your platform and put its folder on your PATH."
+            --title "${{ github.ref_name }}" --notes "Install with Homebrew: brew install strangequery/tap/heartburn. Or unpack the archive for your platform and put its folder on your PATH."

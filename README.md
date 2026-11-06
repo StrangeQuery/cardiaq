@@ -1,13 +1,13 @@
-<p align="center"><img src="https://raw.githubusercontent.com/StrangeQuery/cardiaq/HEAD/assets/cardiaq.png" alt="cardiaq" width="640"></p>
-<p align="center"><a href="https://lab.strangequery.com/cardiaq/"><code>lab.strangequery.com/cardiaq</code></a></p>
-<p align="center"><a href="https://github.com/StrangeQuery/cardiaq"><img src="https://img.shields.io/badge/GitHub-cardiaq-181717?logo=github&amp;logoColor=white" alt="GitHub"></a> <a href="https://discord.gg/VsqKEdBYzJ"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&amp;logoColor=white" alt="Discord"></a></p>
+<p align="center"><img src="https://raw.githubusercontent.com/StrangeQuery/heartburn/HEAD/assets/burn.png" alt="heartburn: a rusty sawblade with CARDIAC's instruction clock cut through it" width="256"></p>
+<p align="center"><a href="https://lab.strangequery.com/cardiac/"><code>lab.strangequery.com/cardiac</code></a></p>
+<p align="center"><a href="https://github.com/StrangeQuery/heartburn"><img src="https://img.shields.io/badge/GitHub-heartburn-181717?logo=github&amp;logoColor=white" alt="GitHub"></a> <a href="https://discord.gg/VsqKEdBYzJ"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&amp;logoColor=white" alt="Discord"></a></p>
 
 
-# cardiaq
-Platform components and tools for executing [CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation) programs developed in Rust with [cargo cardiac](https://lab.strangequery.com/cargo-cardiac/) or hand-assembled with [Cardigan](https://lab.strangequery.com/cardigan) or other tools.
+# heartburn
+The emulator and tools for running [CARDIAC](https://en.wikipedia.org/wiki/CARDboard_Illustrative_Aid_to_Computation) programs developed in Rust with [cargo cardiac](https://lab.strangequery.com/rust-cardiac/) or hand-assembled with [Cardigan](https://lab.strangequery.com/cardigan) or other tools.
 
 ## Running a program with `burn`
-Heartburn (`burn` at the command line) is the execution engine of this runtime, playing the
+Heartburn (`burn` at the command line) is the execution engine, playing the
 same role as `java` or the .NET CLR.
 ```
 burn countdown.cqb    # runs it in the fast emulator
@@ -16,24 +16,28 @@ burn countdown.cqb    # runs it in the fast emulator
 `burn` runs CARDIAC at about a billion instructions per second on a single core of a Mac Studio (Apple M5
 Ultra).
 
-cardiaq bundles `burn` with a few other useful tools for assembling, debugging and profiling programs running on `burn`.
+heartburn comes with a few other useful tools for assembling, debugging and profiling programs running on `burn`.
 
 ## Installation
-With [Rust](https://rustup.rs) installed, install this SDK together with the [Rust compiler](https://lab.strangequery.com/cargo-cardiac) by running:
+If you write your programs in Rust, you don't need anything from here. Install the [Rust compiler](https://lab.strangequery.com/rust-cardiac/) by running:
 
-    cargo install cargo-cardiac cardiaq
+    cargo install cargo-cardiac
 
-If you don't want the Rust compiler and just want the runtime and debugging tools, you can install cardiaq standalone:
+It runs, debugs and assembles programs with this code as `cargo cardiac run`, `cargo cardiac debug` and
+`cargo cardiac asm`.
 
-    cargo install cardiaq
+If you don't use Rust and just want `burn`, `carc` and `ekg`, install them with [Homebrew](https://brew.sh):
 
-This install will give you `burn`, `carc` and `ekg`.
+    brew install strangequery/tap/heartburn
+
+or download the archive for your platform from the [releases](https://github.com/StrangeQuery/heartburn/releases)
+and put its folder on your PATH.
 
 To build from the source code instead:
 
-    git clone https://github.com/StrangeQuery/cardiaq
-    cd cardiaq
-    cargo build --release
+    git clone https://github.com/StrangeQuery/heartburn
+    cd heartburn
+    cargo build --release --features tools --bins
 
 The commands end up in `target/release/`.
 
@@ -54,7 +58,7 @@ All of the commands follow the GNU conventions. They have `--help` and `--versio
 
 ## Heartburn
 
-<img src="https://raw.githubusercontent.com/StrangeQuery/cardiaq/HEAD/assets/burn.png" alt="burn's mark: a rusty sawblade with CARDIAC's instruction clock cut through it" width="160">
+<img src="https://raw.githubusercontent.com/StrangeQuery/heartburn/HEAD/assets/burn.png" alt="burn's mark: a rusty sawblade with CARDIAC's instruction clock cut through it" width="160">
 
 Heartburn (`burn`) is the emulator that runs CARDIAC-compiled .cqb files:
 
@@ -74,7 +78,7 @@ Heartburn (`burn`) is the emulator that runs CARDIAC-compiled .cqb files:
     # measure how fast this machine runs CARDIAC
     burn bench
 
-**Decks.** A deck is plain text typically in a .cqb (Cardiaq Binary) file with one card per line. Lines starting with `#` are comments.
+**Decks.** A deck is plain text typically in a .cqb file with one card per line. Lines starting with `#` are comments.
 
 `burn` has no
 automatic loader, so a deck has to load itself, the way
@@ -263,7 +267,7 @@ written, and 2 if there is a mistake on the command line.
 
 ## Quickstart
 
-cardiaq uses the six-column assembly language format described on
+heartburn uses the six-column assembly language format described on
 [Brian Stuart's page](https://www.cs.drexel.edu/~bls96/museum/cardiac.html):
 
 * **Address**: the cell, from 00 to 99. Cell 00 always holds 001, the loader uses cells 01 and 02 while it reads
@@ -290,7 +294,7 @@ Here is a program in this format that counts down from 5. Save it as `countdown.
     16   900  done   HRS  00
     30   005  n      DATA 5      counts down from here
 
-(The file names don't really matter. `.cq` and `.cqb` are just the conventions this SDK uses, and both are plain
+(The file names don't really matter. `.cq` and `.cqb` are just the conventions these tools use, and both are plain
 text that any tool can create or change.)
 
 **Assemble it.** `carc` writes `countdown.cqb` next to the listing:
