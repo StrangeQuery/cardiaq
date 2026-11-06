@@ -1,5 +1,5 @@
 <p align="center"><img src="https://raw.githubusercontent.com/StrangeQuery/heartburn/HEAD/assets/burn.png" alt="heartburn: a rusty sawblade with CARDIAC's instruction clock cut through it" width="256"></p>
-<p align="center"><a href="https://lab.strangequery.com/cardiac/"><code>lab.strangequery.com/cardiac</code></a></p>
+<p align="center"><a href="https://lab.strangequery.com/heartburn/"><code>lab.strangequery.com/heartburn</code></a></p>
 <p align="center"><a href="https://github.com/StrangeQuery/heartburn"><img src="https://img.shields.io/badge/GitHub-heartburn-181717?logo=github&amp;logoColor=white" alt="GitHub"></a> <a href="https://discord.gg/VsqKEdBYzJ"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&amp;logoColor=white" alt="Discord"></a></p>
 
 
