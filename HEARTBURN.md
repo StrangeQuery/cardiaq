@@ -20,7 +20,7 @@ programs of their own, without Rust, see the [README](https://github.com/Strange
 
 <table>
 <tr>
-<td align="center" valign="top" width="33%"><a href="https://crates.io/crates/cargo-cardiac"><img src="https://raw.githubusercontent.com/StrangeQuery/rust-cardiac/HEAD/assets/logo.png" alt="cargo-cardiac" width="96"></a><br><a href="https://crates.io/crates/cargo-cardiac"><b>cargo-cardiac</b></a><br><b>Strange Query's Rust compiler for CARDIAC</b></td>
+<td align="center" valign="top" width="33%"><a href="https://crates.io/crates/cardiac"><img src="https://raw.githubusercontent.com/StrangeQuery/rust-cardiac/HEAD/assets/logo.png" alt="cardiac" width="96"></a><br><a href="https://crates.io/crates/cardiac"><b><code>cardiac</code></b></a><br><b>Strange Query's Rust for CARDIAC</b></td>
 <td align="center" valign="top" width="33%"><a href="https://github.com/StrangeQuery/heartburn"><img src="https://raw.githubusercontent.com/StrangeQuery/heartburn/HEAD/assets/burn.png" alt="burn, carc and ekg" width="96"></a><br><a href="https://github.com/StrangeQuery/heartburn"><b>burn, carc and ekg</b></a><br>Programs to run, assemble and debug CARDIAC programs</td>
 <td align="center" valign="top" width="33%"><a href="https://lab.strangequery.com/cardigan/"><img src="https://lab.strangequery.com/cardigan/banner.webp" alt="Cardigan" width="160"></a><br><a href="https://lab.strangequery.com/cardigan/"><b>Cardigan</b></a><br>A CARDIAC machine in your browser</td>
 </tr>
