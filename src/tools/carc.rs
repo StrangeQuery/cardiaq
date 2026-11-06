@@ -4,17 +4,13 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
-use heartburn::assemble;
+use crate::assemble;
 
-#[path = "../cli.rs"]
-mod cli;
-#[path = "../getopt.rs"]
-mod getopt;
+use super::getopt::prog;
+use super::{cli, getopt};
 
-const PROG: &str = "carc";
-
-fn usage() -> &'static str {
-    "\
+fn usage() -> String {
+    let text = "\
 Usage: carc [OPTION]... FILE
 Assemble a CARDIAC listing into a deck for burn.
 
@@ -39,11 +35,13 @@ loaded, and no deck is written while there are errors.
 
 The exit status is 0 if the deck was written, 1 if the listing has errors or a file can't be read or written,
 and 2 if there is a mistake on the command line.
-"
+";
+    // the usage line in the name the program goes by (`carc`, or `cargo cardiac asm`)
+    text.replace("Usage: carc ", &format!("Usage: {} ", prog()))
 }
 
 fn die(why: impl std::fmt::Display) -> ! {
-    getopt::die(PROG, why)
+    getopt::die(prog(), why)
 }
 
 /// Whether two paths are the same file (one that doesn't exist yet is no file at all).
@@ -114,7 +112,7 @@ fn carc(file: &str, out: Option<&str>, start: Option<usize>) {
     });
 }
 
-fn main() {
+fn run_main(args: Vec<String>) {
     let opts = [
         getopt::Opt {
             short: Some('o'),
@@ -137,7 +135,7 @@ fn main() {
             arg: false,
         },
     ];
-    let (given, operands) = getopt::parse(PROG, &opts, std::env::args().skip(1), false);
+    let (given, operands) = getopt::parse(prog(), &opts, args, false);
     let (mut out, mut start) = (None, None);
     for (o, value) in &given {
         let value = value.as_deref().unwrap_or_default();
@@ -147,7 +145,7 @@ fn main() {
                 return;
             }
             "version" => {
-                getopt::version(PROG);
+                getopt::version(prog());
                 return;
             }
             "output" => out = Some(value),
@@ -155,7 +153,7 @@ fn main() {
                 let cell = value.parse().ok().filter(|&c: &usize| c < 100 && value.len() <= 2);
                 start = Some(cell.unwrap_or_else(|| {
                     getopt::usage_error(
-                        PROG,
+                        prog(),
                         format!("invalid cell '{value}' for '--start-at': a cell is 00 to 99"),
                     )
                 }));
@@ -164,7 +162,15 @@ fn main() {
     }
     match &operands[..] {
         [f] => carc(f, out, start),
-        [] => getopt::usage_error(PROG, "no input file"),
-        [_, extra, ..] => getopt::usage_error(PROG, format!("extra operand '{extra}'")),
+        [] => getopt::usage_error(prog(), "no input file"),
+        [_, extra, ..] => getopt::usage_error(prog(), format!("extra operand '{extra}'")),
     }
+}
+
+/// carc, the program exactly, named `prog` in its messages and usage (`carc`, or `cargo cardiac asm`), `args` its
+/// arguments (without the program's own name).
+pub fn main(prog: &str, args: Vec<String>) -> std::process::ExitCode {
+    getopt::set_prog(prog);
+    run_main(args);
+    std::process::ExitCode::SUCCESS
 }

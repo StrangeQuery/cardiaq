@@ -37,19 +37,13 @@ fn no_1_adds() {
 
 #[test]
 fn no_2_counts_to_five() {
-    assert_eq!(
-        outputs(&["tests/manual/counting.cq", "--start", "20"]),
-        [1, 2, 3, 4, 5]
-    );
+    assert_eq!(outputs(&["tests/manual/counting.cq", "--start", "20"]), [1, 2, 3, 4, 5]);
 }
 
 #[test]
 fn no_3_counts_on() {
     // it never stops: run it a while
-    let Listing::Memory(cells) = listing::parse(include_str!("manual/counting-loop.cq"))
-        .unwrap()
-        .listing
-    else {
+    let Listing::Memory(cells) = listing::parse(include_str!("manual/counting-loop.cq")).unwrap().listing else {
         panic!("a memory listing")
     };
     let mut out = vec![];
@@ -124,14 +118,8 @@ fn no_8_adds_in_double_precision() {
 #[test]
 fn no_9_plays_nim() {
     assert_eq!(outputs(&["tests/manual/nim.cq", "--start", "01"]), [19]);
-    assert_eq!(
-        outputs(&["tests/manual/nim.cq", "--start", "00", "--", "517"]),
-        [34]
-    );
-    assert_eq!(
-        outputs(&["tests/manual/nim.cq", "--start", "00", "--", "513"]),
-        [30]
-    );
+    assert_eq!(outputs(&["tests/manual/nim.cq", "--start", "00", "--", "517"]), [34]);
+    assert_eq!(outputs(&["tests/manual/nim.cq", "--start", "00", "--", "513"]), [30]);
 }
 
 #[test]

@@ -9,23 +9,19 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
 use std::time::Instant;
 
-use heartburn::assemble::{self, written, Row, OPS};
-use heartburn::cardiac::{Console, Event, Machine};
-use heartburn::listing::{self, Notes};
-use heartburn::tape::{values, Tape};
+use crate::assemble::{self, written, Row, OPS};
+use crate::cardiac::{Console, Event, Machine};
+use crate::listing::{self, Notes};
+use crate::tape::{values, Tape};
 
-#[path = "../cli.rs"]
-mod cli;
-// (its `parse`, which exits on a mistake, is burn's and carc's; ekg reads its options with `try_parse`)
-#[allow(dead_code)]
-#[path = "../getopt.rs"]
-mod getopt;
+use super::getopt::prog;
+use super::{cli, getopt};
 
 /// Instructions a `continue` (or a profile) may run before ekg stops it as a program that may never stop.
 const LIMIT: u64 = 1_000_000_000;
 
-fn usage() -> &'static str {
-    "\
+fn usage() -> String {
+    let text = "\
 Usage: ekg [OPTION]... FILE [INPUT]...
 Debug a CARDIAC program, or profile it with --profile.
 
@@ -56,8 +52,10 @@ input, each one when an INP asks for it, the way burn does.
 The exit status is 0 on success. It is 1 if something failed: the listing has errors, a -x command failed in
 --batch mode, or a profile run was stopped by the limit. It is 2 if there is a mistake on the command line.
 
-Report bugs to: https://github.com/StrangeQuery/cardiaq/issues
-"
+Report bugs to: https://github.com/StrangeQuery/heartburn/issues
+";
+    // the usage line in the name the program goes by (`ekg`, or `cargo cardiac debug`)
+    text.replace("Usage: ekg ", &format!("Usage: {} ", prog()))
 }
 
 fn help() -> &'static str {
@@ -88,11 +86,11 @@ Pressing Enter on an empty line repeats the last step, next or continue.
 }
 
 fn die(why: impl std::fmt::Display) -> ! {
-    getopt::die("ekg", why)
+    getopt::die(prog(), why)
 }
 
 fn bad_usage(why: &str) -> ! {
-    getopt::usage_error("ekg", why)
+    getopt::usage_error(prog(), why)
 }
 
 /// A program as ekg holds it: the machine as it is when the program starts, and the listing its cells came from.
@@ -126,14 +124,14 @@ impl Program {
     /// (and ekg warns of a listing that puts anything there, as carc does).
     fn from_listing(file: &str, text: &str, start: Option<usize>, input: &[i32]) -> Program {
         let asm = assemble::assemble(text);
-        if cli::report("ekg: ", file, text, &asm, true) {
+        if cli::report(&format!("{}: ", prog()), file, text, &asm, true) {
             die(format!("{file}: not assembled"))
         }
         let Some(start) = start.or(asm.start) else {
             die(format!("{file}: no cells: nothing to run"))
         };
         if let Some(w) = cli::start_warning(start, &asm) {
-            eprintln!("ekg: {file}: warning: {w}");
+            eprintln!("{}: {file}: warning: {w}", prog());
         }
         let m = Program::boot(file, &[assemble::deck(&asm, start)], input);
         let loading = m.steps();
@@ -726,7 +724,8 @@ fn debug(file: &str, p: &Program, o: &Options) {
     let tty = std::io::stdin().is_terminal();
     if tty && !o.batch && !o.quiet {
         println!(
-            "ekg (cardiaq) {}: {file}. help lists the commands.",
+            "{} (heartburn) {}: {file}. help lists the commands.",
+            prog(),
             env!("CARGO_PKG_VERSION")
         );
         println!("{}", p.line(&s.m, s.m.pc(), true));
@@ -807,7 +806,7 @@ fn profile(file: &str, p: &Program, limit: u64, stdin: bool) {
     // the limit is on the program's instructions, the loader's not among them
     let end = limit.saturating_add(p.loading);
     let (c, why) = if stdin {
-        profile_run(&mut m, end, &mut cli::stdin_cards("ekg"))
+        profile_run(&mut m, end, &mut cli::stdin_cards(prog()))
     } else {
         profile_run(&mut m, end, &mut std::iter::empty())
     };
@@ -989,7 +988,7 @@ impl Options {
                 std::process::exit(0)
             }
             "version" => {
-                getopt::version("ekg");
+                getopt::version(prog());
                 std::process::exit(0)
             }
             _ => unreachable!("an option in OPTS"),
@@ -998,8 +997,7 @@ impl Options {
     }
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+fn run_main(args: Vec<String>) {
     let o = options(&args).unwrap_or_else(|e| bad_usage(&e));
     let Some(file) = o.file.as_deref() else {
         bad_usage("no program: give it a FILE")
@@ -1014,6 +1012,14 @@ fn main() {
     } else {
         debug(file, &p, &o)
     }
+}
+
+/// ekg, the program exactly, named `prog` in its messages and usage (`ekg`, or `cargo cardiac debug`), `args` its
+/// arguments (without the program's own name).
+pub fn main(prog: &str, args: Vec<String>) -> std::process::ExitCode {
+    getopt::set_prog(prog);
+    run_main(args);
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(test)]

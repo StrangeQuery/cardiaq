@@ -1,21 +1,16 @@
-[workspace]
-members = [".", "tools"]
-# `cargo build --release` here builds the library and the programs: burn, carc and ekg end up in target/release/
-default-members = [".", "tools"]
-
 [package]
 name = "heartburn"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
-description = "The world's fastest CARDIAC emulator, as a library."
+description = "The world's fastest CARDIAC emulator, as a library, and the burn, carc and ekg programs."
 rust-version = "1.97"
 license = "MIT"
-repository = "https://github.com/StrangeQuery/cardiaq"
+repository = "https://github.com/StrangeQuery/heartburn"
 homepage = "https://lab.strangequery.com/cardiac/"
 readme = "HEARTBURN.md"
 keywords = ["cardiac", "emulator", "interpreter", "retrocomputing", "education"]
-categories = ["emulators"]
-# what crates.io gets: the library alone (the programs are in tools/, which is never published)
+categories = ["emulators", "command-line-utilities"]
+# what crates.io gets: the library and the programs' source (src/tools, src/bin), the README and the licence
 include = ["/src", "/HEARTBURN.md", "/LICENSE"]
 
 [lib]
@@ -26,6 +21,53 @@ path = "src/lib.rs"
 # Marks a debugger page draws from (cells run, cells used as data, the last instruction), for a WebAssembly build
 # of the machine to turn on; burn, carc and ekg are built without it, the machine exactly as fast as before.
 marks = []
+# The programs: `heartburn::tools::{burn, carc, ekg}`, and the binaries burn, carc and ekg (and heartburn-tools).
+# Off by default, so a program using heartburn as a library gets the library alone.
+tools = []
+
+# run a deck: `cargo build --release --features tools --bins` puts burn, carc and ekg in target/release/
+[[bin]]
+name = "burn"
+path = "src/bin/burn.rs"
+required-features = ["tools"]
+
+# the assembler: a listing in six columns made into a deck for burn
+[[bin]]
+name = "carc"
+path = "src/bin/carc.rs"
+required-features = ["tools"]
+
+# the debugger and profiler: step a listing or a deck, breakpoints and watches; or count where its instructions go
+[[bin]]
+name = "ekg"
+path = "src/bin/ekg.rs"
+required-features = ["tools"]
+
+# The toolchain the tests use: run a listing, deck <-> listing. Not in a release.
+[[bin]]
+name = "heartburn-tools"
+path = "src/bin/heartburn-tools.rs"
+required-features = ["tools"]
+
+[[test]]
+name = "burn"
+required-features = ["tools"]
+
+[[test]]
+name = "carc"
+required-features = ["tools"]
+
+[[test]]
+name = "ekg"
+required-features = ["tools"]
+
+[[test]]
+name = "emit"
+required-features = ["tools"]
+
+[[test]]
+name = "manual"
+required-features = ["tools"]
 
 [profile.release]
 debug = false

@@ -326,7 +326,7 @@ fn help_version_and_usage_errors_are_gnu_style() {
     assert!(out.contains("\nCommands"), "{out}");
     let (ok, out, _) = ekg(&["--version"]);
     assert!(
-        ok && out.starts_with(&format!("ekg (cardiaq) {}\n", env!("CARGO_PKG_VERSION"))),
+        ok && out.starts_with(&format!("ekg (heartburn) {}\n", env!("CARGO_PKG_VERSION"))),
         "{out}"
     );
     assert!(out.contains("License MIT"), "{out}");

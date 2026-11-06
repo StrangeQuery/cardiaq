@@ -6,8 +6,8 @@
 use std::io::BufRead;
 use std::path::Path;
 
-use heartburn::assemble::{self, Assembly};
-use heartburn::tape::{self, values, Tape};
+use crate::assemble::{self, Assembly};
+use crate::tape::{self, values, Tape};
 
 /// What is wrong in a listing, a line each on standard error in the order of its lines, `PREFIX FILE:LINE:COLUMN:
 /// error: WHAT`: the assembler's diagnostics and, with `loader`, what the deck's loader does to its cells (for a
@@ -75,9 +75,9 @@ pub fn stdin_cards(prog: &'static str) -> impl Iterator<Item = i32> {
         }
         let line = lines
             .next()?
-            .unwrap_or_else(|e| crate::getopt::die(prog, format!("standard input: {}", crate::getopt::os_error(&e))));
+            .unwrap_or_else(|e| super::getopt::die(prog, format!("standard input: {}", super::getopt::os_error(&e))));
         pending = values(&line)
-            .unwrap_or_else(|e| crate::getopt::die(prog, format!("standard input: {e}")))
+            .unwrap_or_else(|e| super::getopt::die(prog, format!("standard input: {e}")))
             .into_iter();
     })
 }

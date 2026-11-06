@@ -146,7 +146,7 @@ fn help_and_version_go_to_standard_output() {
     assert_eq!(code, 0);
     assert_eq!(
         printed.lines().next(),
-        Some(format!("burn (cardiaq) {}", env!("CARGO_PKG_VERSION")).as_str())
+        Some(format!("burn (heartburn) {}", env!("CARGO_PKG_VERSION")).as_str())
     );
 }
 

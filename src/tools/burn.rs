@@ -4,21 +4,19 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
-use heartburn::cardiac::{self, Console, Stop};
-use heartburn::listing;
-use heartburn::panics::Map;
-use heartburn::tape::values;
+use crate::cardiac::{self, Console, Stop};
+use crate::listing;
+use crate::panics::Map;
+use crate::tape::values;
 
-mod cli;
-mod getopt;
+use super::getopt::prog;
+use super::{cli, getopt};
 
 /// Instructions a run may take before it is called a program that never stops (unless --limit says).
 const LIMIT: u64 = 1_000_000_000;
 
-const PROG: &str = "burn";
-
-fn usage() -> &'static str {
-    "\
+fn usage() -> String {
+    let text = "\
 Usage: burn [OPTION]... DECK [--] [INPUT]...
   or:  burn bench
 Run a CARDIAC deck.
@@ -48,11 +46,16 @@ instructions). To run a deck that is actually called bench, use ./bench.
 The exit status is 0 if the program halted or ran out of input cards, 1 if the deck can't be read or the
 program doesn't stop, 2 if there is a mistake on the command line, and 101 if its panic map says it panicked
 (134 for a violated unsafe precondition, as Rust aborts on one).
-"
+";
+    // the usage lines in the name the program goes by (`burn`, or `cargo cardiac run`)
+    let prog = prog();
+    text.replace("Usage: burn ", &format!("Usage: {prog} "))
+        .replace("  or:  burn bench", &format!("  or:  {prog} bench"))
+        .replace("burn bench measures", &format!("{prog} bench measures"))
 }
 
 fn die(why: impl std::fmt::Display) -> ! {
-    getopt::die(PROG, why)
+    getopt::die(prog(), why)
 }
 
 /// The teletype: each value on standard output as it is output. When no one reads it any more (`burn deck | head`)
@@ -108,7 +111,7 @@ fn run(file: &str, input: Option<Vec<i32>>, limit: u64) {
         Map::parse(&text).unwrap_or_else(|e| die(format!("{}: {e}", map_file.display())))
     });
     let mut teletype = Teletype(std::io::stdout().lock());
-    let mut stdin = cli::stdin_cards(PROG);
+    let mut stdin = cli::stdin_cards(prog());
     let (cards, mut more): (Vec<i32>, &mut dyn Iterator<Item = i32>) = match input {
         Some(cards) => (cards, &mut std::iter::empty()),
         None => (vec![], &mut stdin),
@@ -136,7 +139,7 @@ fn run(file: &str, input: Option<Vec<i32>>, limit: u64) {
         )),
     }
     if let Some(panic) = panic {
-        eprintln!("{PROG}: {name}: {panic}");
+        eprintln!("{}: {name}: {panic}", prog());
         std::process::exit(panic.exit_code());
     }
 }
@@ -172,7 +175,7 @@ fn bench() {
     );
 }
 
-fn main() {
+fn run_main(args: Vec<String>) {
     let opts = [
         getopt::Opt {
             short: Some('h'),
@@ -191,35 +194,43 @@ fn main() {
         },
     ];
     // options come before the deck: what follows it is the program's input, -5 a card, not an option
-    let (given, operands) = getopt::parse(PROG, &opts, std::env::args().skip(1), true);
+    let (given, operands) = getopt::parse(prog(), &opts, args, true);
     let mut limit = LIMIT;
     for (o, value) in &given {
         match *o {
             "help" => return print!("{}", usage()),
-            "version" => return getopt::version(PROG),
+            "version" => return getopt::version(prog()),
             _ => {
                 let v = value.as_deref().unwrap_or_default();
                 limit = v.parse().ok().filter(|&n| n > 0).unwrap_or_else(|| {
-                    getopt::usage_error(PROG, format!("invalid --limit '{v}': a number of instructions"))
+                    getopt::usage_error(prog(), format!("invalid --limit '{v}': a number of instructions"))
                 });
             }
         }
     }
     match operands.split_first() {
-        None => getopt::usage_error(PROG, "missing deck operand"),
+        None => getopt::usage_error(prog(), "missing deck operand"),
         // `burn help`, as burn always took it
         Some((c, [])) if c == "help" => print!("{}", usage()),
         Some((c, [])) if c == "bench" => bench(),
-        Some((c, [extra, ..])) if c == "bench" => getopt::usage_error(PROG, format!("extra operand '{extra}'")),
+        Some((c, [extra, ..])) if c == "bench" => getopt::usage_error(prog(), format!("extra operand '{extra}'")),
         Some((deck, rest)) => {
             let (dashes, rest) = match rest {
                 [d, r @ ..] if d == "--" => (true, r),
                 r => (false, r),
             };
             let input = (dashes || !rest.is_empty()).then(|| {
-                values(&rest.join(" ")).unwrap_or_else(|e| getopt::usage_error(PROG, format!("invalid input: {e}")))
+                values(&rest.join(" ")).unwrap_or_else(|e| getopt::usage_error(prog(), format!("invalid input: {e}")))
             });
             run(deck, input, limit)
         }
     }
+}
+
+/// burn, the program exactly, named `prog` in its messages and usage (`burn`, or `cargo cardiac run`), `args` its
+/// arguments (without the program's own name).
+pub fn main(prog: &str, args: Vec<String>) -> std::process::ExitCode {
+    getopt::set_prog(prog);
+    run_main(args);
+    std::process::ExitCode::SUCCESS
 }

@@ -30,13 +30,7 @@ fn carc(args: &[&str]) -> (bool, String, String) {
 #[test]
 fn carc_makes_a_deck_burn_runs() {
     let deck = dir("add").join("add.cqb");
-    let (ok, _, said) = carc(&[
-        "tests/manual/add.cq",
-        "--start-at",
-        "17",
-        "-o",
-        deck.to_str().unwrap(),
-    ]);
+    let (ok, _, said) = carc(&["tests/manual/add.cq", "--start-at", "17", "-o", deck.to_str().unwrap()]);
     assert!(ok && said.is_empty(), "{said}");
     let text = std::fs::read_to_string(&deck).unwrap();
     assert!(
@@ -158,7 +152,7 @@ fn help_and_version_go_to_standard_output() {
     assert_eq!(code, 0);
     assert_eq!(
         printed.lines().next(),
-        Some(format!("carc (cardiaq) {}", env!("CARGO_PKG_VERSION")).as_str())
+        Some(format!("carc (heartburn) {}", env!("CARGO_PKG_VERSION")).as_str())
     );
     assert!(printed.contains("MIT"), "{printed}");
 }

@@ -11,3 +11,5 @@ pub mod cardiac;
 pub mod listing;
 pub mod panics;
 pub mod tape;
+#[cfg(feature = "tools")]
+pub mod tools;

@@ -77,10 +77,7 @@ fn stdin_cards() -> impl Iterator<Item = i32> {
 
 /// Whether a file is a deck of cards (else a listing).
 fn is_tape(file: &str) -> bool {
-    matches!(
-        Path::new(file).extension().and_then(|e| e.to_str()),
-        Some("cqb")
-    )
+    matches!(Path::new(file).extension().and_then(|e| e.to_str()), Some("cqb"))
 }
 
 fn report(why: Stop, steps: u64) {
@@ -273,9 +270,7 @@ fn listing_of(files: &[String], start: Option<usize>, output: Option<&str>) {
                 one(&Tape::phase_path(&out, i + 1), &cells, start.or(at), &Notes::default());
             }
         }
-        _ if files.iter().any(|f| is_tape(f)) => {
-            bad_usage("one deck at a time, and not with listings")
-        }
+        _ if files.iter().any(|f| is_tape(f)) => bad_usage("one deck at a time, and not with listings"),
         _ => match read_listings(files) {
             (Listing::Memory(cells), first, notes) => one(&out, &cells, start.or(first), &notes),
             (Listing::Deck(d), _, _) => {
